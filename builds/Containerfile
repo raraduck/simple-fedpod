@@ -10,6 +10,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
 WORKDIR /app
-COPY app.py /app/app.py
+
+VOLUME ["/app"]
 
 ENTRYPOINT ["python3", "app.py"]
