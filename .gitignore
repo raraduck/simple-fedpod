@@ -4,4 +4,5 @@ data/*
 experiments/*
 !experiments/.gitkeep
 checkpoints/*
-checkpoints/.gitkeep
+!checkpoints/.gitkeep
+sample
