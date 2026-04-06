@@ -8,7 +8,7 @@ class App:
         self.args = args
 
     def run(self):
-        pass
+        log.info("Hello, World!")
 
 
 def main():
