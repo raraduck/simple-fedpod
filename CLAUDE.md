@@ -21,8 +21,11 @@ python3 scripts/app.py --help
 The container uses NVIDIA CUDA 12.8.1 with cuDNN on Ubuntu 24.04, installs PyTorch with CUDA 12.8 support.
 
 ```bash
-# Build (once)
-podman build -f builds/Containerfile -t simple-fedpod:dev
+# Build — dev (scripts/ 는 런타임 마운트)
+podman build -f builds/Containerfile -t simple-fedpod:dev .
+
+# Build — katib (scripts/ 를 이미지에 COPY, 반드시 프로젝트 루트에서 실행)
+podman build -f katib/Containerfile -t simple-fedpod:katib .
 
 # Run
 podman run --gpus 1 \
