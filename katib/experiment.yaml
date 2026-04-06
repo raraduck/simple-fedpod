@@ -1,0 +1,95 @@
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: fedpod-hpo-test
+  namespace: dwnkim
+spec:
+  objective:
+    type: minimize
+    goal: 0.10
+    objectiveMetricName: val_loss
+  algorithm:
+    algorithmName: multivariate-tpe
+
+  # earlyStopping 제거: EarlyStopped Trial이 parallelTrialCount 슬롯을
+  # 점유하는 Katib 버그로 인해 실험이 중간에 멈추는 현상 방지
+
+  parallelTrialCount: 2
+  maxTrialCount: 8
+  maxFailedTrialCount: 3
+  metricsCollectorSpec:
+    collector:
+      kind: StdOut
+    source:
+      filter:
+        metricsFormat:
+        - "{metricName: ([\\w|-]+), metricValue: ((-?\\d+)(\\.\\d+)?)}"
+
+  parameters:
+  - name: lr
+    parameterType: double
+    feasibleSpace:
+      min: "0.0001"
+      max: "0.01"
+  - name: batch
+    parameterType: int
+    feasibleSpace:
+      min: "1"
+      max: "4"
+
+  trialTemplate:
+    primaryContainerName: training-container
+    trialParameters:
+    - name: learningRate
+      description: Learning rate
+      reference: lr
+    - name: batchSize
+      description: Batch size
+      reference: batch
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/inject: "false"
+          spec:
+            nodeSelector:
+              nvidia.com/gpu.model: rtx3090
+            volumes:
+            - name: data-volume
+              nfs:
+                server: 192.168.0.200
+                path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/data
+                readOnly: true
+            - name: experiments-volume
+              nfs:
+                server: 192.168.0.200
+                path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/experiments
+                readOnly: true
+            containers:
+            - name: training-container
+              image: 192.168.0.80:30002/dwnkim/simple-fedpod:katib
+              command:
+              - "python3"
+              - "app.py"
+              - "--epochs=3"
+              - "--lr=${trialParameters.learningRate}"
+              - "--batch=${trialParameters.batchSize}"
+              - "--ckpt-root=/tmp/checkpoints"
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: "8Gi"
+                  nvidia.com/gpu: "1"
+                limits:
+                  cpu: "8"
+                  memory: "16Gi"
+                  nvidia.com/gpu: "1"
+              volumeMounts:
+              - name: data-volume
+                mountPath: /data
+              - name: experiments-volume
+                mountPath: /experiments
+            restartPolicy: Never

@@ -87,4 +87,6 @@ class Trainer:
         self._save(epoch, mean_loss, "latest.pt")
 
         log.info("Epoch %3d    val_loss=%.4f%s", epoch, mean_loss, "  *best*" if improved else "")
+        # Katib StdOut collector 포맷
+        print("{metricName: val_loss, metricValue: %.4f}" % mean_loss, flush=True)
         return mean_loss
