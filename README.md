@@ -5,8 +5,14 @@ FL(Federated Learning) 클라이언트로 동작하는 컨테이너 기반 학�
 ## 코드 구조
 
 ```
-scripts/app.py       # 진입점 및 App 클래스
-builds/Containerfile # 컨테이너 정의
+scripts/
+  app.py          # 진입점 — args 파싱, App.run() 흐름
+  dataset.py      # FeTSDataset, load_split
+  trainer.py      # 학습 루프 (구현 예정)
+  models/
+    unet3d.py     # 3D Residual U-Net
+builds/
+  Containerfile   # 컨테이너 정의
 ```
 
 ### `App` 클래스 (`scripts/app.py`)

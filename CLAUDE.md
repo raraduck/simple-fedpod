@@ -42,8 +42,16 @@ args 기본값은 컨테이너 내부 경로(`/data/...`, `/experiments/...`) �
 
 ## Architecture
 
-- `scripts/app.py` — CLI entry point (`main()`) that parses args and delegates to `App`.
-- `builds/Containerfile` — Container definition; `scripts/` is bind-mounted at runtime into `/app/` (not copied into the image).
+```
+scripts/
+  app.py          # CLI entry point — args, App class, run() flow
+  dataset.py      # FeTSDataset, load_split
+  trainer.py      # training loop (not yet implemented)
+  models/
+    unet3d.py     # 3D Residual U-Net (dynamic: channels, block, norm)
+builds/
+  Containerfile   # bind-mounts scripts/ at runtime, does not copy code
+```
 
 ### Data pipeline (`App.run()`)
 

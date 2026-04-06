@@ -9,8 +9,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir --break-system-packages \
     torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
-WORKDIR /app
+RUN pip3 install --no-cache-dir --break-system-packages \
+    nibabel numpy pandas
 
 VOLUME ["/app"]
+VOLUME ["/data"]
+VOLUME ["/experiments"]
+
+WORKDIR /app
 
 ENTRYPOINT ["python3", "app.py"]
