@@ -22,17 +22,42 @@ The container uses NVIDIA CUDA 12.8.1 with cuDNN on Ubuntu 24.04, installs PyTor
 
 ```bash
 # Build (once)
-podman build -f builds/Containerfile -t simple-fedpod:latest
+podman build -f builds/Containerfile -t simple-fedpod:dev
 
-# Run — mounts scripts/ into /app so code changes apply without rebuilding
-podman run --gpus all -v ./scripts:/app:z simple-fedpod:latest
+# Run — 세 디렉터리를 각각 마운트
+podman run --gpus 1 \
+  -v ./scripts:/app:z \
+  -v ./data:/data:z \
+  -v ./experiments:/experiments:z \
+  simple-fedpod:dev
 ```
 
-`scripts/` 는 이미지에 복사되지 않으며, 런타임에 바인드 마운트됩니다. 코드 수정 후 재빌드 없이 재실행만 하면 됩니다.
+| 호스트 경로 | 컨테이너 경로 | 용도 |
+|-------------|---------------|------|
+| `./scripts` | `/app`        | 코드 (재빌드 없이 수정 반영) |
+| `./data`    | `/data`       | 학습 데이터 (`-D`) |
+| `./experiments` | `/experiments` | 분할 CSV (`-c`) |
+
+args 기본값은 컨테이너 내부 경로(`/data/...`, `/experiments/...`) 기준입니다.
 
 ## Architecture
 
-- `scripts/app.py` — CLI entry point (`main()`) that parses args and delegates to `App`. The `App.run()` method is where fedpod logic will live.
+- `scripts/app.py` — CLI entry point (`main()`) that parses args and delegates to `App`.
 - `builds/Containerfile` — Container definition; `scripts/` is bind-mounted at runtime into `/app/` (not copied into the image).
 
-Note: there is no test framework, linter, or dependency manifest configured yet.
+### Data pipeline (`App.run()`)
+
+```
+load_split(split_csv, partition_id)   CSV → train/val subject lists
+FeTSDataset(data_dir, subjects, ...)  subject list → Dataset
+  __getitem__:
+    {subject}_{ch}.nii.gz × C        → image tensor (C, 128, 128, 128)
+    {subject}_sub.nii.gz + lgrp      → label tensor (L, 128, 128, 128)
+DataLoader(dataset, batch_size, ...)  → batches (B, C/L, 128, 128, 128)
+```
+
+- 입력 채널(`-C`)은 t1/t1ce/t2/flair 외 seg도 추가 가능
+- 레이블은 `sub.nii.gz`의 subregion 값을 `lgrp`로 OR 조합해 binary mask 생성
+- `-P`(Partition ID)로 CSV에서 해당 FL 클라이언트의 subject를 필터링
+
+Note: model, training loop 미구현. test framework, linter, dependency manifest 미설정.
