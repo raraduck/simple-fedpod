@@ -8,7 +8,7 @@ FL(Federated Learning) 클라이언트로 동작하는 컨테이너 기반 학�
 scripts/
   app.py          # 진입점 — args 파싱, App.run() 흐름
   dataset.py      # FeTSDataset, load_split
-  trainer.py      # 학습 루프 (구현 예정)
+  trainer.py      # Trainer — Dice loss, Adam, 체크포인트 저장/로드
   models/
     unet3d.py     # 3D Residual U-Net
 builds/
@@ -26,7 +26,8 @@ main()
       ├── load_split()       — CSV에서 Partition_ID로 train/val subject 목록 분리
       ├── FeTSDataset()      — subject 목록으로 Dataset 구성 (train / val)
       ├── DataLoader()       — 배치 구성 (train: shuffle, val: fixed)
-      └── 학습 루프 (구현 예정)
+      ├── UNet()             — args로 모델 초기화, GPU 배치
+      └── Trainer.run()      — epoch 루프, 체크포인트 저장/로드
 ```
 
 ### `load_split(split_csv, partition_id)`
@@ -64,19 +65,29 @@ CSV에서 `Partition_ID`로 해당 클라이언트의 subject를 필터링해 tr
 | | `--lr`       | `5e-3` | 학습률 |
 | | `--gpu`      | `1` | GPU 사용 여부 (1/0) |
 | `-J` | `--job`      | `test_run` | 실험 이름 |
+| | `--ckpt-root` | `/checkpoints` | 체크포인트 루트 경로 |
 
-args 기본값은 컨테이너 내부 마운트 경로(`/data`, `/experiments`) 기준입니다.
+args 기본값은 컨테이너 내부 마운트 경로(`/data`, `/experiments`, `/checkpoints`) 기준입니다.
 
 ### 컨테이너 마운트 구조
 
 ```
 호스트                  컨테이너
-./scripts      →  /app          (코드)
-./data         →  /data         (-D 경로)
-./experiments  →  /experiments  (-c 경로)
+./scripts      →  /app           (코드)
+./data         →  /data          (-D 경로)
+./experiments  →  /experiments   (-c 경로)
+./checkpoints  →  /checkpoints   (--ckpt-root 경로)
 ```
 
 코드(`scripts/`)는 이미지에 포함되지 않고 런타임에 마운트되므로, 코드 수정 후 재빌드 없이 재실행만 하면 반영됩니다.
+
+### `Trainer` (`scripts/trainer.py`)
+
+- loss: Binary Dice loss
+- optimizer: Adam
+- 에폭마다 `{ckpt_root}/{job}/latest.pt` 저장
+- val_loss 개선 시 `best.pt` 추가 저장
+- 시작 시 `latest.pt` 존재하면 자동 resume
 
 ## 실행
 
@@ -87,7 +98,8 @@ args 기본값은 컨테이너 내부 마운트 경로(`/data`, `/experiments`) 
 ```bash
 python3 scripts/app.py \
   -D ./data/fets128/trainval \
-  -c ./experiments/fets/partition2/fets_split.csv
+  -c ./experiments/fets/partition2/fets_split.csv \
+  --ckpt-root ./checkpoints
 ```
 
 ### 컨테이너 (Podman)
@@ -101,5 +113,6 @@ podman run --gpus 1 \
   -v ./scripts:/app:z \
   -v ./data:/data:z \
   -v ./experiments:/experiments:z \
+  -v ./checkpoints:/checkpoints:z \
   simple-fedpod:dev
 ```

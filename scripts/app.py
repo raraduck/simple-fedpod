@@ -1,9 +1,14 @@
 import logging
+import os
 
 import torch
 from torch.utils.data import DataLoader
 
 from dataset import FeTSDataset, load_split
+from models.unet3d import UNet, PlainBlock, ResidualBlock
+from trainer import Trainer
+
+_BLOCKS = {'residual': ResidualBlock, 'plain': PlainBlock}
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +49,35 @@ class App:
             log.info("  label[%d] %-4s — foreground: %d / %d voxels (%.1f%%)",
                      i, name, pos, total, 100 * pos / total)
 
+        # Model
+        device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
+        enc_channels = list(map(int, self.args.channels.strip("[]").split(",")))
+        model = UNet(
+            in_ch=len(channels),
+            out_classes=len(lidx),
+            channels=enc_channels,
+            block=_BLOCKS[self.args.block],
+            norm_key=self.args.norm,
+        ).to(device)
+
+        n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        log.info("Model — UNet  block=%s  channels=%s  norm=%s  device=%s",
+                 self.args.block, enc_channels, self.args.norm, device)
+        log.info("  parameters: %s", f"{n_params:,}")
+
+        with torch.no_grad():
+            dummy = images[:1].to(device)
+            out = model(dummy)
+        log.info("Forward pass — input: %s  output: %s", tuple(dummy.shape), tuple(out.shape))
+
+        # Training
+        ckpt_dir = os.path.join(self.args.ckpt_root, self.args.job)
+        trainer = Trainer(model, train_loader, val_loader,
+                          lr=self.args.lr, device=device, ckpt_dir=ckpt_dir)
+        for epoch in range(trainer.start_epoch, self.args.epochs + 1):
+            trainer.train_epoch(epoch)
+            trainer.val_epoch(epoch)
+
 
 def main():
     import argparse
@@ -72,6 +106,7 @@ def main():
 
     # Run
     parser.add_argument("-J", "--job",       default="test_run",                                     help="실험 이름")
+    parser.add_argument("--ckpt-root",       default="/checkpoints",                                 help="체크포인트 루트 경로")
 
     args = parser.parse_args()
 

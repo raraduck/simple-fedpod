@@ -24,11 +24,12 @@ The container uses NVIDIA CUDA 12.8.1 with cuDNN on Ubuntu 24.04, installs PyTor
 # Build (once)
 podman build -f builds/Containerfile -t simple-fedpod:dev
 
-# Run — 세 디렉터리를 각각 마운트
+# Run
 podman run --gpus 1 \
   -v ./scripts:/app:z \
   -v ./data:/data:z \
   -v ./experiments:/experiments:z \
+  -v ./checkpoints:/checkpoints:z \
   simple-fedpod:dev
 ```
 
@@ -37,6 +38,7 @@ podman run --gpus 1 \
 | `./scripts` | `/app`        | 코드 (재빌드 없이 수정 반영) |
 | `./data`    | `/data`       | 학습 데이터 (`-D`) |
 | `./experiments` | `/experiments` | 분할 CSV (`-c`) |
+| `./checkpoints` | `/checkpoints` | 체크포인트 저장/로드 (`-J`) |
 
 args 기본값은 컨테이너 내부 경로(`/data/...`, `/experiments/...`) 기준입니다.
 
