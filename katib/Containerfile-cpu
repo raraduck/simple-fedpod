@@ -1,15 +1,12 @@
 FROM docker.io/nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
-ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir --break-system-packages \
-    --timeout=600 --retries=5 \
     torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
 RUN pip3 install --no-cache-dir --break-system-packages \
@@ -19,8 +16,5 @@ WORKDIR /app
 
 # Katib 이미지는 코드를 직접 포함 (볼륨 마운트 없이 K8s Pod에서 실행)
 COPY scripts/ /app/
-
-# GPU 인식 확인
-RUN python3 -c "import torch; print(f'torch {torch.__version__} / cuda {torch.version.cuda}')"
 
 ENTRYPOINT ["python3", "app.py"]
