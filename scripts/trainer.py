@@ -3,15 +3,9 @@ import os
 
 import torch
 
+from models.loss import SoftDiceBCEWithLogitsLoss
+
 log = logging.getLogger(__name__)
-
-
-def dice_loss(pred, target, eps=1e-6):
-    """Binary Dice loss. pred: sigmoid 출력 (B, L, ...), target: binary mask (B, L, ...)"""
-    pred   = pred.contiguous().view(pred.shape[0], pred.shape[1], -1)
-    target = target.contiguous().view(target.shape[0], target.shape[1], -1)
-    intersection = (pred * target).sum(-1)
-    return 1 - (2 * intersection + eps) / (pred.sum(-1) + target.sum(-1) + eps)
 
 
 class Trainer:
@@ -21,6 +15,7 @@ class Trainer:
         self.val_loader   = val_loader
         self.device       = device
         self.optimizer    = torch.optim.Adam(model.parameters(), lr=lr)
+        self.criterion    = SoftDiceBCEWithLogitsLoss()
         self.ckpt_dir     = ckpt_dir
         self.best_val     = float("inf")
         self.start_epoch  = 1
@@ -51,8 +46,8 @@ class Trainer:
 
     def _loss(self, images, labels):
         logits = self.model(images)
-        pred   = torch.sigmoid(logits)
-        return dice_loss(pred, labels).mean()
+        bce, dsc = self.criterion(logits, labels)
+        return bce + dsc.mean()
 
     def train_epoch(self, epoch):
         self.model.train()
