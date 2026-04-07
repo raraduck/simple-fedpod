@@ -42,7 +42,7 @@ spec:
   - name: checkpoints-volume
     nfs:
       server: 192.168.0.200
-      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/checkpoints
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/checkpoints
       readOnly: false
   - name: dshm
     emptyDir:
