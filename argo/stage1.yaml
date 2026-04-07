@@ -1,10 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  generateName: fedpod-train-test-
+  generateName: fedpod-stage1-
   namespace: dwnkim
 spec:
-  entrypoint: train
+  entrypoint: stage1
   serviceAccountName: default
 
   volumes:
@@ -26,7 +26,7 @@ spec:
   - name: checkpoints-volume
     nfs:
       server: 192.168.0.200
-      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/checkpoints
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/checkpoints
       readOnly: false
   - name: dshm
     emptyDir:
@@ -34,7 +34,31 @@ spec:
       sizeLimit: 8Gi
 
   templates:
+  - name: stage1
+    dag:
+      tasks:
+      - name: train-partition-1
+        template: train
+        arguments:
+          parameters:
+          - name: partition
+            value: "1"
+          - name: job
+            value: "partition1"
+      - name: train-partition-2
+        template: train
+        arguments:
+          parameters:
+          - name: partition
+            value: "2"
+          - name: job
+            value: "partition2"
+
   - name: train
+    inputs:
+      parameters:
+      - name: partition
+      - name: job
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
@@ -47,8 +71,12 @@ spec:
       - "/data/fets128/trainval"
       - "-c"
       - "/experiments/fets/partition2/fets_split.csv"
+      - "-P"
+      - "{{inputs.parameters.partition}}"
       - "--ckpt-root"
       - "/checkpoints"
+      - "-J"
+      - "{{inputs.parameters.job}}"
       - "--epochs"
       - "3"
       resources:
