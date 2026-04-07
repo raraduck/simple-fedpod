@@ -10,9 +10,18 @@ from torch.utils.data import Dataset
 log = logging.getLogger(__name__)
 
 
-def load_split(split_csv, partition_id):
+def load_split(split_csv, partition_id, round_idx=None):
     df = pd.read_csv(split_csv)
-    df = df[df["Partition_ID"] == partition_id][["Subject_ID", "TrainOrVal"]]
+    df = df[df["Partition_ID"] == partition_id]
+
+    if round_idx is not None:
+        round_col = f"R{round_idx:02d}"
+        if round_col in df.columns:
+            # val은 항상 포함, train은 round 컬럼으로 필터링
+            df = df[(df["TrainOrVal"] == "val") | (df[round_col] == 1)]
+            log.info("Round column '%s' applied", round_col)
+        else:
+            log.warning("Round column '%s' not found — using all subjects", round_col)
 
     train = df[df["TrainOrVal"] == "train"]["Subject_ID"].tolist()
     val   = df[df["TrainOrVal"] == "val"]["Subject_ID"].tolist()

@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 
 class Trainer:
-    def __init__(self, model, train_loader, val_loader, lr, device, ckpt_dir):
+    def __init__(self, model, train_loader, val_loader, lr, device, ckpt_dir, epoch_offset=0):
         self.model        = model
         self.train_loader = train_loader
         self.val_loader   = val_loader
@@ -18,10 +18,10 @@ class Trainer:
         self.criterion    = SoftDiceBCEWithLogitsLoss()
         self.ckpt_dir     = ckpt_dir
         self.best_val     = float("inf")
-        self.start_epoch  = 1
+        self.start_epoch  = epoch_offset + 1  # round 간 이어받기
 
         os.makedirs(ckpt_dir, exist_ok=True)
-        self._auto_resume()
+        self._auto_resume()  # round 내 재시작 (있으면 덮어씀)
 
     def _auto_resume(self):
         latest = os.path.join(self.ckpt_dir, "latest.pt")

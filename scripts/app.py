@@ -23,7 +23,7 @@ class App:
             log.info("  %-10s = %s", key, value)
         log.info("=====================")
 
-        train_subjects, val_subjects = load_split(self.args.split, self.args.partition)
+        train_subjects, val_subjects = load_split(self.args.split, self.args.partition, self.args.round)
 
         channels = self.args.chan.strip("[]").split(",")
         lgrp = [list(map(int, g.strip("[]").split(","))) for g in self.args.lgrp.strip("[]").split("],[")]
@@ -65,6 +65,11 @@ class App:
                  self.args.block, enc_channels, self.args.norm, device)
         log.info("  parameters: %s", f"{n_params:,}")
 
+        if self.args.init_ckpt:
+            ckpt = torch.load(self.args.init_ckpt, map_location=device)
+            model.load_state_dict(ckpt["model"])
+            log.info("Loaded init model ← %s  (round=%s)", self.args.init_ckpt, ckpt.get("round"))
+
         with torch.no_grad():
             dummy = images[:1].to(device)
             out = model(dummy)
@@ -76,7 +81,8 @@ class App:
                                 f"R{self.args.rounds:02d}r{self.args.round:02d}")
         log.info("Round %d / %d  ckpt_dir=%s", self.args.round, self.args.rounds, ckpt_dir)
         trainer = Trainer(model, train_loader, val_loader,
-                          lr=self.args.lr, device=device, ckpt_dir=ckpt_dir)
+                          lr=self.args.lr, device=device, ckpt_dir=ckpt_dir,
+                          epoch_offset=self.args.epoch)
         for epoch in range(trainer.start_epoch, self.args.epochs + 1):
             trainer.train_epoch(epoch)
             trainer.val_epoch(epoch)
@@ -115,6 +121,7 @@ def main():
     # Run
     parser.add_argument("-J", "--job",       default="test_run",                                     help="실험 이름")
     parser.add_argument("--ckpt-root",       default="/checkpoints",                                 help="체크포인트 루트 경로")
+    parser.add_argument("--init-ckpt",       default="",                                             help="초기 모델 경로 (agg.pt) — 미지정 시 random init")
 
     args = parser.parse_args()
 
