@@ -71,7 +71,10 @@ class App:
         log.info("Forward pass — input: %s  output: %s", tuple(dummy.shape), tuple(out.shape))
 
         # Training
-        ckpt_dir = os.path.join(self.args.ckpt_root, self.args.job)
+        ckpt_dir = os.path.join(self.args.ckpt_root, self.args.job,
+                                f"inst{self.args.partition:02d}",
+                                f"R{self.args.rounds:02d}r{self.args.round:02d}")
+        log.info("Round %d / %d  ckpt_dir=%s", self.args.round, self.args.rounds, ckpt_dir)
         trainer = Trainer(model, train_loader, val_loader,
                           lr=self.args.lr, device=device, ckpt_dir=ckpt_dir)
         for epoch in range(trainer.start_epoch, self.args.epochs + 1):
@@ -99,10 +102,15 @@ def main():
     parser.add_argument("--norm",            default="instance",                                     help="정규화 (instance / batch)")
 
     # Training
-    parser.add_argument("-E", "--epochs",    type=int,   default=30,                                 help="에폭 수")
     parser.add_argument("--batch",           type=int,   default=2,                                  help="배치 크기")
     parser.add_argument("--lr",              type=float, default=5e-3,                               help="학습률")
     parser.add_argument("--gpu",             type=int,   default=1,                                  help="GPU 사용 여부 (1/0)")
+
+    # FL rounds
+    parser.add_argument("--rounds",          type=int,   default=1,                                  help="총 FL 라운드 수")
+    parser.add_argument("--round",           type=int,   default=0,                                  help="현재 FL 라운드 (0-indexed)")
+    parser.add_argument("-E", "--epochs",    type=int,   default=30,                                 help="라운드당 총 에폭 수")
+    parser.add_argument("--epoch",           type=int,   default=0,                                  help="에폭 오프셋 (resume 시작점)")
 
     # Run
     parser.add_argument("-J", "--job",       default="test_run",                                     help="실험 이름")

@@ -20,8 +20,14 @@ spec:
       value: "/experiments/fets/partition2/fets_split.csv"
     - name: ckpt-root
       value: "/checkpoints"
+    - name: rounds
+      value: "1"
+    - name: round
+      value: "0"
     - name: epochs
       value: "3"
+    - name: epoch
+      value: "0"
 
   volumes:
   - name: app-volume
@@ -91,8 +97,14 @@ spec:
       - "{{inputs.parameters.job-name}}"
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
+      - "--rounds"
+      - "{{workflow.parameters.rounds}}"
+      - "--round"
+      - "{{workflow.parameters.round}}"
       - "--epochs"
       - "{{workflow.parameters.epochs}}"
+      - "--epoch"
+      - "{{workflow.parameters.epoch}}"
       resources:
         requests:
           cpu: "4"
