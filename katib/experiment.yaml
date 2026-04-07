@@ -1,21 +1,18 @@
 apiVersion: kubeflow.org/v1beta1
 kind: Experiment
 metadata:
-  name: fedpod-hpo-test
+  name: fedpod-hpo-test-2
   namespace: dwnkim
 spec:
   objective:
     type: minimize
-    goal: 0.10
+    goal: 0.20
     objectiveMetricName: val_loss
   algorithm:
     algorithmName: multivariate-tpe
 
-  # earlyStopping 제거: EarlyStopped Trial이 parallelTrialCount 슬롯을
-  # 점유하는 Katib 버그로 인해 실험이 중간에 멈추는 현상 방지
-
   parallelTrialCount: 2
-  maxTrialCount: 8
+  maxTrialCount: 4
   maxFailedTrialCount: 3
   metricsCollectorSpec:
     collector:
@@ -35,7 +32,7 @@ spec:
     parameterType: int
     feasibleSpace:
       min: "1"
-      max: "2"
+      max: "4"
 
   trialTemplate:
     primaryContainerName: training-container
@@ -68,13 +65,17 @@ spec:
                 server: 192.168.0.200
                 path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/experiments
                 readOnly: true
+            - name: dshm
+              emptyDir:
+                medium: Memory
+                sizeLimit: 8Gi
             containers:
             - name: training-container
               image: 192.168.0.80:30002/dwnkim/katib-fedpod:v0.1
               command:
               - "python3"
               - "app.py"
-              - "--epochs=3"
+              - "--epochs=10"
               - "--lr=${trialParameters.learningRate}"
               - "--batch=${trialParameters.batchSize}"
               - "--ckpt-root=/tmp/checkpoints"
@@ -92,4 +93,6 @@ spec:
                 mountPath: /data
               - name: experiments-volume
                 mountPath: /experiments
+              - name: dshm
+                mountPath: /dev/shm
             restartPolicy: Never
