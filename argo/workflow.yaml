@@ -1,0 +1,73 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: fedpod-train-test-
+  namespace: dwnkim
+spec:
+  entrypoint: train
+  serviceAccountName: default
+
+  volumes:
+  - name: app-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/scripts
+      readOnly: true
+  - name: data-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/data
+      readOnly: true
+  - name: experiments-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/experiments
+      readOnly: true
+  - name: checkpoints-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/checkpoints
+      readOnly: false
+  - name: dshm
+    emptyDir:
+      medium: Memory
+      sizeLimit: 8Gi
+
+  templates:
+  - name: train
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    nodeSelector:
+      nvidia.com/gpu.model: rtx3090
+    container:
+      image: 192.168.0.80:30002/dwnkim/argo-fedpod:v0.1
+      args:
+      - "-D"
+      - "/data/fets128/trainval"
+      - "-c"
+      - "/experiments/fets/partition2/fets_split.csv"
+      - "--ckpt-root"
+      - "/checkpoints"
+      - "--epochs"
+      - "3"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: dshm
+        mountPath: /dev/shm

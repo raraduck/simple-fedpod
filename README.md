@@ -8,11 +8,16 @@ FL(Federated Learning) 클라이언트로 동작하는 컨테이너 기반 학�
 scripts/
   app.py          # 진입점 — args 파싱, App.run() 흐름
   dataset.py      # FeTSDataset, load_split
-  trainer.py      # Trainer — Dice loss, Adam, 체크포인트 저장/로드
+  trainer.py      # Trainer — BCE+SoftDice loss, Adam, 체크포인트 저장/로드
   models/
     unet3d.py     # 3D Residual U-Net
-builds/
-  Containerfile   # 컨테이너 정의
+    loss.py       # SoftDiceBCEWithLogitsLoss
+argo/
+  Containerfile   # Argo 이미지 — scripts/ 는 NFS 마운트 (COPY 없음)
+  workflow.yaml   # Argo Workflow 정의
+katib/
+  Containerfile   # Katib 이미지 — scripts/ 를 이미지에 COPY
+  experiment.yaml # HPO Experiment — lr, batch
 ```
 
 ### `App` 클래스 (`scripts/app.py`)
@@ -69,21 +74,18 @@ CSV에서 `Partition_ID`로 해당 클라이언트의 subject를 필터링해 tr
 
 args 기본값은 컨테이너 내부 마운트 경로(`/data`, `/experiments`, `/checkpoints`) 기준입니다.
 
-### 컨테이너 마운트 구조
+### 이미지 구분
 
-```
-호스트                  컨테이너
-./scripts      →  /app           (코드)
-./data         →  /data          (-D 경로)
-./experiments  →  /experiments   (-c 경로)
-./checkpoints  →  /checkpoints   (--ckpt-root 경로)
-```
+| 이미지 | Containerfile | 코드 포함 방식 | 용도 |
+|--------|--------------|----------------|------|
+| `argo-fedpod:v0.1` | `argo/Containerfile` | NFS 마운트 (`/app`) | Argo Workflow 학습 |
+| `simple-fedpod:katib` | `katib/Containerfile` | 이미지에 COPY | Katib HPO trial |
 
-코드(`scripts/`)는 이미지에 포함되지 않고 런타임에 마운트되므로, 코드 수정 후 재빌드 없이 재실행만 하면 반영됩니다.
+Argo 이미지는 코드를 포함하지 않으므로 `scripts/`를 NFS에 올려두면 이미지 재빌드 없이 코드 변경이 반영됩니다.
 
 ### `Trainer` (`scripts/trainer.py`)
 
-- loss: Binary Dice loss
+- loss: `SoftDiceBCEWithLogitsLoss` (BCE + SoftDice, logits 직접 입력)
 - optimizer: Adam
 - 에폭마다 `{ckpt_root}/{job}/latest.pt` 저장
 - val_loss 개선 시 `best.pt` 추가 저장
@@ -102,17 +104,20 @@ python3 scripts/app.py \
   --ckpt-root ./checkpoints
 ```
 
-### 컨테이너 (Podman)
+### 컨테이너 (Podman — 로컬 테스트)
 
 ```bash
-# 빌드 (최초 1회)
-podman build -f builds/Containerfile -t simple-fedpod:dev
+# Argo 이미지 빌드
+podman build -f argo/Containerfile -t argo-fedpod:v0.1 .
 
-# 실행
+# 실행 (scripts/ 바인드 마운트)
 podman run --gpus 1 \
   -v ./scripts:/app:z \
   -v ./data:/data:z \
   -v ./experiments:/experiments:z \
   -v ./checkpoints:/checkpoints:z \
-  simple-fedpod:dev
+  argo-fedpod:v0.1
+
+# Katib 이미지 빌드 (scripts/ COPY 포함)
+podman build -f katib/Containerfile -t simple-fedpod:katib .
 ```
