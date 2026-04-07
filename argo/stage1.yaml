@@ -6,6 +6,22 @@ metadata:
 spec:
   entrypoint: stage1
   serviceAccountName: default
+  podGC:
+    strategy: OnPodCompletion
+
+  # ── 공통 파라미터 ──────────────────────────────────────────────────────────
+  arguments:
+    parameters:
+    - name: image
+      value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.2"
+    - name: data-path
+      value: "/data/fets128/trainval"
+    - name: split-csv
+      value: "/experiments/fets/partition2/fets_split.csv"
+    - name: ckpt-root
+      value: "/checkpoints"
+    - name: epochs
+      value: "3"
 
   volumes:
   - name: app-volume
@@ -34,51 +50,49 @@ spec:
       sizeLimit: 8Gi
 
   templates:
+
+  # ── DAG ───────────────────────────────────────────────────────────────────
   - name: stage1
     dag:
       tasks:
-      - name: train-partition-1
-        template: train
+      - name: train
+        template: train-job
         arguments:
           parameters:
           - name: partition
-            value: "1"
-          - name: job
-            value: "partition1"
-      - name: train-partition-2
-        template: train
-        arguments:
-          parameters:
-          - name: partition
-            value: "2"
-          - name: job
-            value: "partition2"
+            value: "{{item.partition}}"
+          - name: job-name
+            value: "{{item.job-name}}"
+        withItems:
+        - { partition: "1",  job-name: "stage1-p01" }
+        - { partition: "2",  job-name: "stage1-p02" }
 
-  - name: train
+  # ── Train Job 템플릿 ───────────────────────────────────────────────────────
+  - name: train-job
     inputs:
       parameters:
       - name: partition
-      - name: job
+      - name: job-name
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
     nodeSelector:
       nvidia.com/gpu.model: rtx3090
     container:
-      image: 192.168.0.80:30002/dwnkim/argo-fedpod:v0.2
+      image: "{{workflow.parameters.image}}"
       args:
       - "-D"
-      - "/data/fets128/trainval"
+      - "{{workflow.parameters.data-path}}"
       - "-c"
-      - "/experiments/fets/partition2/fets_split.csv"
+      - "{{workflow.parameters.split-csv}}"
       - "-P"
       - "{{inputs.parameters.partition}}"
-      - "--ckpt-root"
-      - "/checkpoints"
       - "-J"
-      - "{{inputs.parameters.job}}"
+      - "{{inputs.parameters.job-name}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
       - "--epochs"
-      - "3"
+      - "{{workflow.parameters.epochs}}"
       resources:
         requests:
           cpu: "4"
