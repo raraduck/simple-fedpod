@@ -28,12 +28,13 @@ podman build -f argo/Containerfile -t argo-fedpod:v0.2 .
 podman build -f katib/Containerfile -t simple-fedpod:katib .
 
 # 로컬 실행 (Argo 이미지, scripts/ 바인드 마운트)
-# --device /dev/nvidia* : GPU 디바이스 직접 지정 (Podman에서 --gpus 사용 불가)
-# --shm-size=8g : DataLoader num_workers>0 사용 시 shared memory 필요
+# Podman GPU 사용 시 호스트 nvidia 드라이버 라이브러리를 직접 마운트해야 함
 sudo podman run \
   --device /dev/nvidia0 \
   --device /dev/nvidiactl \
   --device /dev/nvidia-uvm \
+  -v /lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:ro \
+  -e LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64 \
   --shm-size=8g \
   -v ./scripts:/app:z \
   -v ./data:/data:z \
