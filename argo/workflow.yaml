@@ -6,6 +6,8 @@ metadata:
 spec:
   entrypoint: train
   serviceAccountName: default
+  podGC:
+    strategy: OnPodCompletion
 
   volumes:
   - name: app-volume
