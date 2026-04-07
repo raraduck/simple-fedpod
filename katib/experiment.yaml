@@ -70,7 +70,7 @@ spec:
                 readOnly: true
             containers:
             - name: training-container
-              image: 192.168.0.80:30002/dwnkim/simple-fedpod:katib
+              image: 192.168.0.80:30002/dwnkim/katib-fedpod:v0.1
               command:
               - "python3"
               - "app.py"
