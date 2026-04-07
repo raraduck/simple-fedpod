@@ -5,7 +5,8 @@
 ```
 argo/
   Containerfile   # 이미지 빌드 정의
-  workflow.yaml   # Argo Workflow 실행 정의
+  workflow.yaml   # 단일 job 테스트용
+  stage1.yaml     # 병렬 학습 DAG (withItems 패턴)
 ```
 
 ## 이미지
@@ -27,31 +28,60 @@ podman push 192.168.0.80:30002/dwnkim/argo-fedpod:v0.2
 | `.../simple-fedpod/scripts` | `/app` | 코드 |
 | `.../data` | `/data` | 학습 데이터 (`-D`) |
 | `.../experiments` | `/experiments` | 분할 CSV (`-c`) |
-| `.../checkpoints` | `/checkpoints` | 체크포인트 저장/로드 |
+| `.../simple-fedpod/checkpoints` | `/checkpoints` | 체크포인트 저장/로드 |
 
 `dshm` (`emptyDir: Memory, 8Gi`) — DataLoader shared memory용
 
 ## Workflow 실행
 
-```bash
-# 제출
-kubectl apply -f argo/workflow.yaml
+### workflow.yaml — 단일 job 테스트
 
-# 또는 argo CLI
-argo submit argo/workflow.yaml -n dwnkim
+```bash
 argo submit argo/workflow.yaml -n dwnkim --watch
 ```
 
-## 현재 학습 설정
+### stage1.yaml — 병렬 학습 DAG
 
-| 항목 | 값 |
-|------|----|
-| 이미지 | `argo-fedpod:v0.2` |
-| GPU | rtx3090 × 1 |
-| epochs | 3 |
-| 데이터 | `/data/fets128/trainval` |
-| split | `/experiments/fets/partition2/fets_split.csv` |
-| checkpoint | `/checkpoints` |
+`withItems`로 partition 목록을 정의하면 자동으로 병렬 실행됩니다.
+
+```bash
+argo submit argo/stage1.yaml -n dwnkim --watch
+```
+
+파라미터 오버라이드:
+```bash
+argo submit argo/stage1.yaml -n dwnkim \
+  -p epochs=10 \
+  -p image=192.168.0.80:30002/dwnkim/argo-fedpod:v0.3
+```
+
+#### DAG 구조
+
+```
+stage1 (DAG)
+ ├── train (partition=1, job=stage1-p01)  ─┐ 병렬
+ └── train (partition=2, job=stage1-p02)  ─┘
+```
+
+job 추가 시 `withItems`에 한 줄 추가:
+```yaml
+withItems:
+- { partition: "1",  job-name: "stage1-p01" }
+- { partition: "2",  job-name: "stage1-p02" }
+- { partition: "3",  job-name: "stage1-p03" }  # 추가
+```
+
+#### 공통 파라미터 (`workflow.parameters`)
+
+| 파라미터 | 기본값 |
+|----------|--------|
+| `image` | `argo-fedpod:v0.2` |
+| `data-path` | `/data/fets128/trainval` |
+| `split-csv` | `/experiments/fets/partition2/fets_split.csv` |
+| `ckpt-root` | `/checkpoints` |
+| `epochs` | `3` |
+
+체크포인트는 `{ckpt-root}/{job-name}/` 에 저장되어 partition별로 분리됩니다.
 
 ## 로컬 테스트 (Podman)
 
