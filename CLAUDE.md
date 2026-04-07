@@ -22,7 +22,7 @@ The container uses NVIDIA CUDA 12.8.1 with cuDNN on Ubuntu 24.04, installs PyTor
 
 ```bash
 # Argo 이미지 빌드 (scripts/ 는 NFS 마운트, COPY 없음)
-podman build -f argo/Containerfile -t argo-fedpod:v0.1 .
+podman build -f argo/Containerfile -t argo-fedpod:v0.2 .
 
 # Katib 이미지 빌드 (scripts/ COPY 포함, 프로젝트 루트에서 실행)
 podman build -f katib/Containerfile -t simple-fedpod:katib .
@@ -39,7 +39,7 @@ sudo podman run \
   -v ./data:/data:z \
   -v ./experiments:/experiments:z \
   -v ./checkpoints:/checkpoints:z \
-  192.168.0.80:30002/dwnkim/argo-fedpod:v0.1
+  192.168.0.80:30002/dwnkim/argo-fedpod:v0.2
 ```
 
 | 이미지 | 코드 | 용도 |

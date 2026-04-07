@@ -78,7 +78,7 @@ args 기본값은 컨테이너 내부 마운트 경로(`/data`, `/experiments`, 
 
 | 이미지 | Containerfile | 코드 포함 방식 | 용도 |
 |--------|--------------|----------------|------|
-| `argo-fedpod:v0.1` | `argo/Containerfile` | NFS 마운트 (`/app`) | Argo Workflow 학습 |
+| `argo-fedpod:v0.2` | `argo/Containerfile` | NFS 마운트 (`/app`) | Argo Workflow 학습 |
 | `simple-fedpod:katib` | `katib/Containerfile` | 이미지에 COPY | Katib HPO trial |
 
 Argo 이미지는 코드를 포함하지 않으므로 `scripts/`를 NFS에 올려두면 이미지 재빌드 없이 코드 변경이 반영됩니다.
@@ -108,15 +108,21 @@ python3 scripts/app.py \
 
 ```bash
 # Argo 이미지 빌드
-podman build -f argo/Containerfile -t argo-fedpod:v0.1 .
+podman build -f argo/Containerfile -t argo-fedpod:v0.2 .
 
 # 실행 (scripts/ 바인드 마운트)
-podman run --gpus 1 \
+# --device /dev/nvidia* : GPU 디바이스 직접 지정 (Podman에서 --gpus 사용 불가)
+# --shm-size=8g : DataLoader num_workers>0 사용 시 shared memory 필요
+sudo podman run \
+  --device /dev/nvidia0 \
+  --device /dev/nvidiactl \
+  --device /dev/nvidia-uvm \
+  --shm-size=8g \
   -v ./scripts:/app:z \
   -v ./data:/data:z \
   -v ./experiments:/experiments:z \
   -v ./checkpoints:/checkpoints:z \
-  argo-fedpod:v0.1
+  192.168.0.80:30002/dwnkim/argo-fedpod:v0.2
 
 # Katib 이미지 빌드 (scripts/ COPY 포함)
 podman build -f katib/Containerfile -t simple-fedpod:katib .

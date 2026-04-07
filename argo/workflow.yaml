@@ -41,7 +41,7 @@ spec:
     nodeSelector:
       nvidia.com/gpu.model: rtx3090
     container:
-      image: 192.168.0.80:30002/dwnkim/argo-fedpod:v0.1
+      image: 192.168.0.80:30002/dwnkim/argo-fedpod:v0.2
       args:
       - "-D"
       - "/data/fets128/trainval"
