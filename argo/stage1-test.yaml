@@ -14,6 +14,8 @@ spec:
     parameters:
     - name: image
       value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.2"
+    - name: job
+      value: "stage1"
     - name: data-path
       value: "/data/fets128/trainval"
     - name: ckpt-root
@@ -84,7 +86,7 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "/checkpoints/stage1/agg/init/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
           - name: round
             value: "0"
 
@@ -97,23 +99,23 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R05r00/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/split.csv"
           - name: round
             value: "1"
           - name: epoch
             value: "4"
           - name: init-ckpt
-            value: "{{item.ckpt}}"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r00/best.pt"
         withItems:
-        - { partition: "1",  ckpt: "/checkpoints/stage1/inst01/R05r00/best.pt" }
-        - { partition: "2",  ckpt: "/checkpoints/stage1/inst02/R05r00/best.pt" }
-        - { partition: "3",  ckpt: "/checkpoints/stage1/inst03/R05r00/best.pt" }
-        - { partition: "10", ckpt: "/checkpoints/stage1/inst10/R05r00/best.pt" }
-        - { partition: "22", ckpt: "/checkpoints/stage1/inst22/R05r00/best.pt" }
-        - { partition: "24", ckpt: "/checkpoints/stage1/inst24/R05r00/best.pt" }
-        - { partition: "25", ckpt: "/checkpoints/stage1/inst25/R05r00/best.pt" }
-        - { partition: "26", ckpt: "/checkpoints/stage1/inst26/R05r00/best.pt" }
-        - { partition: "28", ckpt: "/checkpoints/stage1/inst28/R05r00/best.pt" }
+        - { partition: "1",  inst: "inst01" }
+        - { partition: "2",  inst: "inst02" }
+        - { partition: "3",  inst: "inst03" }
+        - { partition: "10", inst: "inst10" }
+        - { partition: "22", inst: "inst22" }
+        - { partition: "24", inst: "inst24" }
+        - { partition: "25", inst: "inst25" }
+        - { partition: "26", inst: "inst26" }
+        - { partition: "28", inst: "inst28" }
 
       - name: agg-r1
         template: agg-job
@@ -121,7 +123,7 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R05r00/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/split.csv"
           - name: round
             value: "1"
 
@@ -134,23 +136,23 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R05r01/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/split.csv"
           - name: round
             value: "2"
           - name: epoch
             value: "8"
           - name: init-ckpt
-            value: "{{item.ckpt}}"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r01/best.pt"
         withItems:
-        - { partition: "1",  ckpt: "/checkpoints/stage1/inst01/R05r01/best.pt" }
-        - { partition: "2",  ckpt: "/checkpoints/stage1/inst02/R05r01/best.pt" }
-        - { partition: "3",  ckpt: "/checkpoints/stage1/inst03/R05r01/best.pt" }
-        - { partition: "10", ckpt: "/checkpoints/stage1/inst10/R05r01/best.pt" }
-        - { partition: "22", ckpt: "/checkpoints/stage1/inst22/R05r01/best.pt" }
-        - { partition: "24", ckpt: "/checkpoints/stage1/inst24/R05r01/best.pt" }
-        - { partition: "25", ckpt: "/checkpoints/stage1/inst25/R05r01/best.pt" }
-        - { partition: "26", ckpt: "/checkpoints/stage1/inst26/R05r01/best.pt" }
-        - { partition: "28", ckpt: "/checkpoints/stage1/inst28/R05r01/best.pt" }
+        - { partition: "1",  inst: "inst01" }
+        - { partition: "2",  inst: "inst02" }
+        - { partition: "3",  inst: "inst03" }
+        - { partition: "10", inst: "inst10" }
+        - { partition: "22", inst: "inst22" }
+        - { partition: "24", inst: "inst24" }
+        - { partition: "25", inst: "inst25" }
+        - { partition: "26", inst: "inst26" }
+        - { partition: "28", inst: "inst28" }
 
       - name: agg-r2
         template: agg-job
@@ -158,7 +160,7 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R05r01/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/split.csv"
           - name: round
             value: "2"
 
@@ -171,23 +173,23 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R05r02/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/split.csv"
           - name: round
             value: "3"
           - name: epoch
             value: "12"
           - name: init-ckpt
-            value: "{{item.ckpt}}"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r02/best.pt"
         withItems:
-        - { partition: "1",  ckpt: "/checkpoints/stage1/inst01/R05r02/best.pt" }
-        - { partition: "2",  ckpt: "/checkpoints/stage1/inst02/R05r02/best.pt" }
-        - { partition: "3",  ckpt: "/checkpoints/stage1/inst03/R05r02/best.pt" }
-        - { partition: "10", ckpt: "/checkpoints/stage1/inst10/R05r02/best.pt" }
-        - { partition: "22", ckpt: "/checkpoints/stage1/inst22/R05r02/best.pt" }
-        - { partition: "24", ckpt: "/checkpoints/stage1/inst24/R05r02/best.pt" }
-        - { partition: "25", ckpt: "/checkpoints/stage1/inst25/R05r02/best.pt" }
-        - { partition: "26", ckpt: "/checkpoints/stage1/inst26/R05r02/best.pt" }
-        - { partition: "28", ckpt: "/checkpoints/stage1/inst28/R05r02/best.pt" }
+        - { partition: "1",  inst: "inst01" }
+        - { partition: "2",  inst: "inst02" }
+        - { partition: "3",  inst: "inst03" }
+        - { partition: "10", inst: "inst10" }
+        - { partition: "22", inst: "inst22" }
+        - { partition: "24", inst: "inst24" }
+        - { partition: "25", inst: "inst25" }
+        - { partition: "26", inst: "inst26" }
+        - { partition: "28", inst: "inst28" }
 
       - name: agg-r3
         template: agg-job
@@ -195,7 +197,7 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R05r02/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/split.csv"
           - name: round
             value: "3"
 
@@ -208,23 +210,23 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R05r03/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/split.csv"
           - name: round
             value: "4"
           - name: epoch
             value: "16"
           - name: init-ckpt
-            value: "{{item.ckpt}}"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r03/best.pt"
         withItems:
-        - { partition: "1",  ckpt: "/checkpoints/stage1/inst01/R05r03/best.pt" }
-        - { partition: "2",  ckpt: "/checkpoints/stage1/inst02/R05r03/best.pt" }
-        - { partition: "3",  ckpt: "/checkpoints/stage1/inst03/R05r03/best.pt" }
-        - { partition: "10", ckpt: "/checkpoints/stage1/inst10/R05r03/best.pt" }
-        - { partition: "22", ckpt: "/checkpoints/stage1/inst22/R05r03/best.pt" }
-        - { partition: "24", ckpt: "/checkpoints/stage1/inst24/R05r03/best.pt" }
-        - { partition: "25", ckpt: "/checkpoints/stage1/inst25/R05r03/best.pt" }
-        - { partition: "26", ckpt: "/checkpoints/stage1/inst26/R05r03/best.pt" }
-        - { partition: "28", ckpt: "/checkpoints/stage1/inst28/R05r03/best.pt" }
+        - { partition: "1",  inst: "inst01" }
+        - { partition: "2",  inst: "inst02" }
+        - { partition: "3",  inst: "inst03" }
+        - { partition: "10", inst: "inst10" }
+        - { partition: "22", inst: "inst22" }
+        - { partition: "24", inst: "inst24" }
+        - { partition: "25", inst: "inst25" }
+        - { partition: "26", inst: "inst26" }
+        - { partition: "28", inst: "inst28" }
 
       - name: agg-r4
         template: agg-job
@@ -232,7 +234,7 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R05r03/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/split.csv"
           - name: round
             value: "4"
 
@@ -249,7 +251,7 @@ spec:
       args:
       - "--dry-run"
       - "-J"
-      - "stage1"
+      - "{{workflow.parameters.job}}"
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "-c"
@@ -291,18 +293,18 @@ spec:
       - "-D"
       - "{{workflow.parameters.data-path}}"
       - "-c"
-      - "/checkpoints/stage1/agg/init/split.csv"
+      - "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
       - "-P"
       - "{{inputs.parameters.partition}}"
       - "-J"
-      - "stage1"
+      - "{{workflow.parameters.job}}"
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "--rounds"
       - "5"
       - "--round"
       - "0"
-      - "-E"
+      - "--epochs"
       - "4"
       - "--epoch"
       - "0"
@@ -351,14 +353,14 @@ spec:
       - "-P"
       - "{{inputs.parameters.partition}}"
       - "-J"
-      - "stage1"
+      - "{{workflow.parameters.job}}"
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "--rounds"
       - "5"
       - "--round"
       - "{{inputs.parameters.round}}"
-      - "-E"
+      - "--epochs"
       - "4"
       - "--epoch"
       - "{{inputs.parameters.epoch}}"
@@ -401,7 +403,7 @@ spec:
       command: ["python3", "agg.py"]
       args:
       - "-J"
-      - "stage1"
+      - "{{workflow.parameters.job}}"
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "-c"
