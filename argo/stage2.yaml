@@ -1,0 +1,323 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: fedpod-stage2-
+  namespace: dwnkim
+spec:
+  entrypoint: stage2
+  serviceAccountName: default
+  podGC:
+    strategy: OnPodCompletion
+
+  # ── 공통 파라미터 ──────────────────────────────────────────────────────────
+  arguments:
+    parameters:
+    - name: image
+      value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.2"
+    - name: job
+      value: "stage2"
+    - name: committee-job
+      value: "stage1"
+    - name: committee-rounds
+      value: "5"
+    - name: committee-round
+      value: "4"
+    - name: committee-partitions
+      value: "1,2,3,10,22,24,25,26,28"
+    - name: data-path
+      value: "/data/fets128/trainval"
+    - name: ckpt-root
+      value: "/checkpoints"
+
+  volumes:
+  - name: app-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/scripts
+      readOnly: true
+  - name: data-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/data
+      readOnly: true
+  - name: experiments-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/experiments
+      readOnly: true
+  - name: checkpoints-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/checkpoints
+      readOnly: false
+  - name: dshm
+    emptyDir:
+      medium: Memory
+      sizeLimit: 8Gi
+
+  templates:
+
+  # ── DAG ───────────────────────────────────────────────────────────────────
+  # rounds=2, epochs=3, partitions=1,2,3,10,22,24,25,26,28
+  # ckpt 경로 형식: agg/R02r{rr}/agg.pt  (FL 규칙: 매 라운드 공유 집계 모델 사용)
+  # epoch offset:  r0=0, r1=3
+  - name: stage2
+    dag:
+      tasks:
+
+      # dry-run: pool+entropy selection (committee = stage1 최종 지역모델)
+      - name: dry-run
+        template: dry-run-job
+
+      # Round 0: agg/init/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r0
+        template: train-job
+        dependencies: [dry-run]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
+          - name: round
+            value: "0"
+          - name: epoch
+            value: "0"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: agg-r0
+        template: agg-job
+        dependencies: [train-r0]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
+          - name: round
+            value: "0"
+
+      # Round 1: agg/R02r00/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r1
+        template: train-job
+        dependencies: [agg-r0]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R02r00/split.csv"
+          - name: round
+            value: "1"
+          - name: epoch
+            value: "3"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R02r00/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: agg-r1
+        template: agg-job
+        dependencies: [train-r1]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R02r00/split.csv"
+          - name: round
+            value: "1"
+
+  # ── Dry-run Job (pool+entropy, GPU 필요) ──────────────────────────────────
+  - name: dry-run-job
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    nodeSelector:
+      nvidia.com/gpu.model: rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "agg.py"]
+      args:
+      - "--dry-run"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "-c"
+      - "/experiments/fets/partition2/fets_split.csv"
+      - "--sampling-rate"
+      - "1.0"
+      - "--sampling-mode"
+      - "pool"
+      - "--selection"
+      - "entropy"
+      - "--in-ch"
+      - "5"
+      - "--out-classes"
+      - "3"
+      - "--committee-job"
+      - "{{workflow.parameters.committee-job}}"
+      - "--committee-rounds"
+      - "{{workflow.parameters.committee-rounds}}"
+      - "--committee-round"
+      - "{{workflow.parameters.committee-round}}"
+      - "--committee-partitions"
+      - "{{workflow.parameters.committee-partitions}}"
+      - "--committee-in-ch"
+      - "4"
+      - "--committee-out-classes"
+      - "1"
+      - "--committee-chan"
+      - "[t1,t1ce,t2,flair]"
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "--gpu"
+      - "1"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+
+  # ── Train Job (모든 라운드 — FL 규칙: agg.pt 에서 시작) ───────────────────
+  - name: train-job
+    inputs:
+      parameters:
+      - name: partition
+      - name: split-csv
+      - name: round
+      - name: epoch
+      - name: init-ckpt
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    nodeSelector:
+      nvidia.com/gpu.model: rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      args:
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "-P"
+      - "{{inputs.parameters.partition}}"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "--rounds"
+      - "2"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--epochs"
+      - "3"
+      - "--epoch"
+      - "{{inputs.parameters.epoch}}"
+      - "--init-ckpt"
+      - "{{inputs.parameters.init-ckpt}}"
+      - "-C"
+      - "[t1,t1ce,t2,flair,seg]"
+      - "-G"
+      - "[[1,2,4],[1,4],[4]]"
+      - "-N"
+      - "[wt,tc,et]"
+      - "-I"
+      - "[1,2,3]"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: dshm
+        mountPath: /dev/shm
+
+  # ── Agg Job (FedAvg — agg.pt + split CSV 생성) ────────────────────────────
+  - name: agg-job
+    inputs:
+      parameters:
+      - name: split-csv
+      - name: round
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    nodeSelector:
+      nvidia.com/gpu.model: rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "agg.py"]
+      args:
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "--sampling-rate"
+      - "1.0"
+      - "--sampling-mode"
+      - "dynamic"
+      - "--rounds"
+      - "2"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--epochs"
+      - "3"
+      - "--partitions"
+      - "1,2,3,10,22,24,25,26,28"
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
