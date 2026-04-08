@@ -242,7 +242,7 @@ spec:
       annotations:
         sidecar.istio.io/inject: "false"
     nodeSelector:
-      nvidia.com/gpu.model: rtx3090
+      nvidia.com/gpu.model: rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       command: ["python3", "agg.py"]
@@ -284,7 +284,7 @@ spec:
       annotations:
         sidecar.istio.io/inject: "false"
     nodeSelector:
-      nvidia.com/gpu.model: rtx3090
+      nvidia.com/gpu.model: rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       args:
@@ -340,7 +340,7 @@ spec:
       annotations:
         sidecar.istio.io/inject: "false"
     nodeSelector:
-      nvidia.com/gpu.model: rtx3090
+      nvidia.com/gpu.model: rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       args:
@@ -395,7 +395,7 @@ spec:
       annotations:
         sidecar.istio.io/inject: "false"
     nodeSelector:
-      nvidia.com/gpu.model: rtx3090
+      nvidia.com/gpu.model: rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       command: ["python3", "agg.py"]
