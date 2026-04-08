@@ -16,7 +16,7 @@ python3 scripts/agg.py --dry-run -J stage1 --ckpt-root ./checkpoints -c ./experi
 python3 scripts/app.py -D ./data/fets128/trainval -c ./checkpoints/stage1/agg/init/split.csv -P 1 -J stage1 --ckpt-root ./checkpoints --rounds 1 --round 0 -E 3 --init-ckpt ./checkpoints/stage1/agg/init/agg.pt
 
 # round 0 집계
-python3 scripts/agg.py -J stage1 --ckpt-root ./checkpoints -c ./checkpoints/stage1/agg/init/split.csv --rounds 1 --round 0 --epochs 3 --num-partitions 2
+python3 scripts/agg.py -J stage1 --ckpt-root ./checkpoints -c ./checkpoints/stage1/agg/init/split.csv --rounds 1 --round 0 --epochs 3 --partitions 1,2
 ```
 
 ## Container
@@ -83,7 +83,18 @@ app.py --round 1   → checkpoints/{job}/inst{PP}/R{RR}r01/
 
 Poisson 샘플링: `k ~ Poisson(λ)`, `λ = mean(N_per_partition) × sampling_rate`  
 - `static`: dry-run 1회 draw 후 고정  
-- `dynamic`: 매 라운드 재추출
+- `dynamic`: 매 라운드 재추출  
+- `pool`: **dry-run 전용**. entropy/random으로 top-k 선정 → R00에 직접 기록, 비선택 subject는 `Partition_ID=NA`로 마스킹.  
+  이후 라운드는 `static` 또는 `dynamic`으로 지정해야 하며, `Partition_ID.notna()` 필터로 pool 내에서만 샘플링됨.  
+  라운드에서 `--sampling-mode pool` 지정 시 에러.
+
+### Subject 선택 방식 (`--selection`)
+
+- `random`: 기관별 Poisson(λ) 무작위 샘플링  
+- `entropy`: **dry-run 전용**. uncertainty 기반 global top-k 선택.  
+  - **committee > 1**: **BALD** = `H[E_m[p]] - E_m[H[p_m]]` — 모델 간 불일치(inter-domain uncertainty) 측정  
+  - committee 미지정 시 random으로 대체 (warning 출력)  
+  - 라운드에서 지정 시 에러 (committee 미갱신으로 의미 없음)
 
 ### Data Pipeline (`App.run()`)
 

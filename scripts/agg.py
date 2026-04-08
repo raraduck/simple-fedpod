@@ -27,9 +27,14 @@ class Aggregator:
             self._init_split()
             return
 
-        partitions = list(range(1, self.args.num_partitions + 1))
-        log.info("Round %d / %d — aggregating %d partitions (algorithm=%s)",
-                 self.args.round, self.args.rounds, len(partitions), self.args.algorithm)
+        if self.args.sampling_mode == "pool":
+            raise ValueError("--sampling-mode pool은 dry-run 전용입니다. 라운드에서는 static 또는 dynamic을 사용하세요.")
+        if self.args.selection == "entropy":
+            raise ValueError("라운드에서 --selection entropy는 지원하지 않습니다. --selection random을 사용하세요.")
+
+        partitions = [int(p.strip()) for p in self.args.partitions.split(",") if p.strip()]
+        log.info("Round %d / %d — aggregating %d partitions %s (algorithm=%s)",
+                 self.args.round, self.args.rounds, len(partitions), partitions, self.args.algorithm)
 
         # 각 partition의 best.pt 로드
         state_dicts = []
@@ -61,7 +66,7 @@ class Aggregator:
         log.info("Saved aggregated model → %s", agg_path)
 
         # split CSV 업데이트 (next round 컬럼 추가)
-        next_split = self._update_split(self.args.split, self.args.round)
+        next_split = self._update_split(self.args.split, self.args.round, agg_state)
 
         # Argo output parameters 기록
         next_round = self.args.round + 1
@@ -76,7 +81,9 @@ class Aggregator:
     # ── Split CSV 초기화 (dry-run) ──────────────────────────────────────────
     def _sample_train(self, df, col):
         """전체 기관의 평균 train 수로 공통 λ를 정하고, 기관별로 Poisson(λ) 샘플링."""
-        partitions = sorted(df["Partition_ID"].unique())
+        partitions = sorted(
+            df[df["Partition_ID"].notna() & (df["TrainOrVal"] == "train")]["Partition_ID"].unique()
+        )
         per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
                  for p in partitions]
         lam = np.mean(per_n) * self.args.sampling_rate
@@ -86,7 +93,8 @@ class Aggregator:
         df[col] = None
         for p, n_total in zip(partitions, per_n):
             train_idx = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")].index
-            n = int(np.clip(np.random.poisson(lam), 1, n_total))
+            # n = int(np.clip(np.random.poisson(lam), 1, n_total)) # random poisson
+            n = int(np.clip(round(lam), 1, n_total)) # strict poisson
             selected = set(pd.Index(train_idx).to_series().sample(n=n, random_state=None).values)
             df.loc[train_idx, col] = train_idx.map(lambda i: 1 if i in selected else 0)
             log.info("  Partition %s — train=%d  selected=%d", p, n_total, n)
@@ -96,18 +104,58 @@ class Aggregator:
 
     def _init_split(self):
         df = pd.read_csv(self.args.split)[["Partition_ID", "Subject_ID", "TrainOrVal"]]
-        df = self._sample_train(df, "R00")
+        df["Partition_ID"] = df["Partition_ID"].astype("Int64")
+
+        if self.args.sampling_mode == "pool":
+            # Step 1: entropy/random으로 pool 결정 → 비선택 subject Partition_ID=NA 마스킹
+            if self.args.selection == "entropy":
+                if not (self.args.committee or self.args.committee_job):
+                    raise RuntimeError("pool+entropy dry-run에는 --committee 또는 --committee-job 이 필요합니다.")
+                device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
+                models = self._build_committee(device)
+                channels = self.args.committee_chan.strip("[]").split(",")
+                df = self._sample_train_entropy(df, "_pool_tmp", models, device, channels)
+            else:  # random
+                df = self._sample_train(df, "_pool_tmp")
+            non_pool = (df["TrainOrVal"] == "train") & (df["_pool_tmp"] == 0)
+            df.loc[non_pool, "Partition_ID"] = pd.NA
+            df = df.drop(columns=["_pool_tmp"])
+            log.info("Pool patch — %d train subjects masked (Partition_ID=NA) (selection=%s)",
+                    int(non_pool.sum()), self.args.selection)
+            # Step 2: pool 내에서 per-partition Poisson 샘플링 → R00
+            df = self._sample_train(df, "R00")
+        else:
+            # static / dynamic 공통 기본 흐름
+            if self.args.selection == "entropy":
+                if not (self.args.committee or self.args.committee_job):
+                    log.warning("--selection entropy 이지만 --committee 미지정 → random으로 대체")
+                    df = self._sample_train(df, "R00")
+                else:
+                    device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
+                    models = self._build_committee(device)
+                    channels = self.args.committee_chan.strip("[]").split(",")
+                    df = self._sample_train_entropy(df, "R00", models, device, channels)
+            else:
+                df = self._sample_train(df, "R00")
+
         init_split = os.path.join(self.args.ckpt_root, self.args.job, "agg", "init", "split.csv")
         df.to_csv(init_split, index=False)
         log.info("Init split CSV saved → %s", init_split)
         self._write_output("next-split-csv", init_split)
 
     # ── Split CSV 업데이트 (round 집계 후) ──────────────────────────────────
-    def _update_split(self, current_split_csv, round_idx):
+    def _update_split(self, current_split_csv, round_idx, agg_state=None):
         next_round = round_idx + 1
         df = pd.read_csv(current_split_csv)
+        # CSV 읽기 시 NA 포함 컬럼이 float으로 변환되는 문제 방지
+        df["Partition_ID"] = df["Partition_ID"].astype("Int64")
+        for col in df.columns:
+            if col[0] == "R" and col[1:].isdigit():
+                df[col] = df[col].astype("Int64")
         next_col = f"R{next_round:02d}"
         if self.args.sampling_mode == "dynamic":
+            if self.args.selection == "entropy":
+                raise ValueError("라운드에서 --selection entropy는 지원하지 않습니다. --selection random을 사용하세요.")
             df = self._sample_train(df, next_col)
         else:  # static: 초기 선택 그대로 유지
             prev_col = f"R{round_idx:02d}"
@@ -119,6 +167,150 @@ class Aggregator:
         df.to_csv(next_split, index=False)
         log.info("Updated split CSV (col=%s) → %s", next_col, next_split)
         return next_split
+
+    def _build_model(self, state_dict, device):
+        enc_channels = list(map(int, self.args.channels.strip("[]").split(",")))
+        model = UNet(
+            in_ch=self.args.in_ch,
+            out_classes=self.args.out_classes,
+            channels=enc_channels,
+            block=_BLOCKS[self.args.block],
+            norm_key=self.args.norm,
+        )
+        model.load_state_dict(state_dict)
+        model.to(device).eval()
+        return model
+
+    def _build_committee(self, device):
+        """committee 모델 리스트 로드.
+
+        우선순위:
+        1. --committee-job 지정 시 체크포인트 구조에서 자동 생성
+           (--committee-partitions "1,2,5" 로 기관 선택)
+        2. --committee 직접 경로 지정 (.pt 파일 또는 폴더, 콤마 구분 복수 경로)
+        """
+        pt_files = []
+
+        if self.args.committee_job:
+            partitions = [int(p.strip()) for p in self.args.committee_partitions.split(",") if p.strip()]
+            for p in partitions:
+                path = os.path.join(
+                    self.args.ckpt_root,
+                    self.args.committee_job,
+                    f"inst{p:02d}",
+                    f"R{self.args.committee_rounds:02d}r{self.args.committee_round:02d}",
+                    "best.pt",
+                )
+                if not os.path.exists(path):
+                    log.warning("Committee — checkpoint not found: %s", path)
+                    continue
+                pt_files.append(path)
+        else:
+            entries = [p.strip() for p in self.args.committee.split(",") if p.strip()]
+            for entry in entries:
+                if os.path.isfile(entry):
+                    pt_files.append(entry)
+                else:
+                    pt_files.extend(sorted(
+                        os.path.join(entry, f) for f in os.listdir(entry) if f.endswith(".pt")
+                    ))
+
+        if not pt_files:
+            raise RuntimeError("committee 경로에서 .pt 파일을 찾을 수 없습니다.")
+        models = []
+        for pt in pt_files:
+            ckpt = torch.load(pt, map_location="cpu")
+            models.append(self._build_committee_model(ckpt["model"], device))
+            log.info("Committee model loaded ← %s", pt)
+        log.info("Committee size: %d", len(models))
+        return models
+
+    def _build_committee_model(self, state_dict, device):
+        """committee 전용 모델 빌드 — committee-* 아키텍처 인자 사용."""
+        enc_channels = list(map(int, self.args.channels.strip("[]").split(",")))
+        model = UNet(
+            in_ch=self.args.committee_in_ch,
+            out_classes=self.args.committee_out_classes,
+            channels=enc_channels,
+            block=_BLOCKS[self.args.block],
+            norm_key=self.args.norm,
+        )
+        model.load_state_dict(state_dict)
+        model.to(device).eval()
+        return model
+
+    def _sample_train_entropy(self, df, col, models, device, channels):
+        """모델 committee로 전체 train subject 추론 → 예측 평균 엔트로피 기준 global top-k 선택."""
+        import nibabel as nib
+
+        partitions = sorted(
+            df[df["Partition_ID"].notna() & (df["TrainOrVal"] == "train")]["Partition_ID"].unique()
+        )
+        per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
+                 for p in partitions]
+        lam = np.mean(per_n) * self.args.sampling_rate
+        # global top-k: random 모드와 동일하게 파티션별 min(round(λ), n_i) 합산
+        k = int(sum(int(np.clip(round(lam), 1, n)) for n in per_n))
+        use_bald = len(models) > 1
+        metric_name = "BALD" if use_bald else "entropy"
+        log.info("%s selection — committee=%d  λ=%.2f  global k=%d  (total train=%d)",
+                 metric_name.upper(), len(models), lam, k, sum(per_n))
+
+        train_rows = df[df["TrainOrVal"] == "train"]
+        scores = {}   # subject_id → score
+        eps = 1e-6
+        n_total = len(train_rows)
+        log_interval = max(1, n_total // 10)
+        with torch.no_grad():
+            for i, (_, row) in enumerate(train_rows.iterrows()):
+                subj = row["Subject_ID"]
+                if i % log_interval == 0:
+                    log.info("  %s scoring — %d / %d", metric_name.upper(), i, n_total)
+                try:
+                    imgs = []
+                    for ch in channels:
+                        path = os.path.join(self.args.data,
+                                            subj, f"{subj}_{ch}.nii.gz")
+                        imgs.append(nib.load(path).get_fdata(dtype=np.float32))
+                    x = torch.tensor(np.stack(imgs)[None]).to(device)  # (1,C,H,W,D)
+                    preds = torch.stack([torch.sigmoid(m(x)) for m in models])  # (M,1,L,H,W,D)
+                    if use_bald:
+                        # BALD = H[E_m[p]] - E_m[H[p_m]]
+                        # 모델 간 불일치가 클수록 높은 값 → inter-domain uncertainty
+                        p_mean = preds.mean(dim=0).cpu().numpy()          # (1,L,H,W,D)
+                        p_all  = preds.cpu().numpy()                       # (M,1,L,H,W,D)
+                        h_mean = -(p_mean * np.log(p_mean + eps) + (1 - p_mean) * np.log(1 - p_mean + eps))
+                        h_ind  = -(p_all  * np.log(p_all  + eps) + (1 - p_all)  * np.log(1 - p_all  + eps))
+                        score  = float((h_mean - h_ind.mean(axis=0)).mean())
+                    else:
+                        # 단일 모델: 예측 엔트로피
+                        p = preds[0].cpu().numpy()                         # (1,L,H,W,D)
+                        score = float(-(p * np.log(p + eps) + (1 - p) * np.log(1 - p + eps)).mean())
+                    scores[subj] = score
+                except Exception as e:
+                    log.warning("  %s — %s 계산 실패: %s", subj, metric_name, e)
+                    scores[subj] = 0.0
+
+        # 점수 내림차순 정렬 → global top-k
+        ranked = sorted(scores, key=scores.__getitem__, reverse=True)
+        selected = set(ranked[:k])
+        if ranked:
+            log.info("%s range — top=%.4f  k-th=%.4f  bottom=%.4f", metric_name.upper(),
+                     scores[ranked[0]],
+                     scores[ranked[k - 1]] if k <= len(ranked) else scores[ranked[-1]],
+                     scores[ranked[-1]])
+
+        df[col] = None
+        for p in partitions:
+            train_idx = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")].index
+            df.loc[train_idx, col] = [
+                1 if df.loc[i, "Subject_ID"] in selected else 0 for i in train_idx
+            ]
+            n_sel = int(df.loc[train_idx, col].sum())
+            log.info("  Partition %s — train=%d  selected=%d", p, len(train_idx), n_sel)
+
+        df[col] = df[col].astype("Int64")
+        return df
 
     # ── 초기 모델 생성 (dry-run) ────────────────────────────────────────────
     def _init_model(self):
@@ -179,11 +371,23 @@ def main():
 
     # Aggregation
     parser.add_argument("--dry-run",        action="store_true",                help="초기 모델 생성만 수행 (집계 없음)")
+    parser.add_argument("--gpu",            type=int,   default=1,              help="GPU 사용 여부 (1/0) — entropy 추론에 적용")
     parser.add_argument("--sampling-rate",  type=float, default=1.0,            help="train subjects 샘플링 비율 (0.0~1.0)")
-    parser.add_argument("--sampling-mode",  default="static",                   help="샘플링 모드 (static / dynamic)")
+    parser.add_argument("--sampling-mode",  default="static",                   help="샘플링 모드 (static / dynamic / pool)")
+    parser.add_argument("--selection",      default="random",                   help="subject 선택 방식 (random / entropy)")
+    parser.add_argument("--committee",            default="",    help="entropy 선택용 모델 경로 (.pt 또는 폴더, 콤마 구분 복수 경로)")
+    parser.add_argument("--committee-job",        default="",    help="committee job 이름 — 체크포인트 구조에서 자동 경로 생성 시 사용")
+    parser.add_argument("--committee-rounds",     type=int, default=1, help="committee job의 총 라운드 수")
+    parser.add_argument("--committee-round",      type=int, default=0, help="committee로 사용할 라운드 번호 (0-indexed)")
+    parser.add_argument("--committee-partitions", default="",    help="committee 기관 ID 목록 (콤마 구분, e.g. '1,2,5,7')")
+    parser.add_argument("--committee-in-ch",      type=int, default=4,                  help="committee 모델 입력 채널 수")
+    parser.add_argument("--committee-out-classes", type=int, default=1,                 help="committee 모델 출력 클래스 수")
+    parser.add_argument("--committee-chan",        default="[t1,t1ce,t2,flair]",         help="committee 모델 입력 채널 (entropy 추론용)")
+    parser.add_argument("-D", "--data",     default="/data/fets128/trainval",    help="데이터 경로 (entropy 선택 시 추론에 사용)")
+    parser.add_argument("--chan",           default="[t1,t1ce,t2,flair]",        help="입력 채널 (entropy 추론용)")
     parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg)")
     parser.add_argument("-J", "--job",      default="stage1",                   help="job 이름 (e.g. stage1 → stage1-p01, stage1/agg/)")
-    parser.add_argument("--num-partitions", type=int,   default=2,              help="집계할 partition 수")
+    parser.add_argument("--partitions",     default="",                         help="집계할 partition ID 목록 (콤마 구분, e.g. '1,2,5')")
     parser.add_argument("--ckpt-root",      default="/checkpoints",             help="체크포인트 루트 경로")
 
     # Model (dry-run 시 초기화에 필요)

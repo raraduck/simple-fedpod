@@ -83,7 +83,7 @@ class App:
         trainer = Trainer(model, train_loader, val_loader,
                           lr=self.args.lr, device=device, ckpt_dir=ckpt_dir,
                           epoch_offset=self.args.epoch)
-        for epoch in range(trainer.start_epoch, self.args.epochs + 1):
+        for epoch in range(trainer.start_epoch, self.args.epoch + self.args.epochs + 1):
             trainer.train_epoch(epoch)
             trainer.val_epoch(epoch)
 
