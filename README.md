@@ -84,6 +84,25 @@ $$k \sim \text{Poisson}(\lambda), \quad \lambda = \bar{N} \times r$$
 |------|------|
 | `static` | dry-run 시 1회 Poisson draw → 이후 라운드 고정 |
 | `dynamic` | 매 라운드 Poisson draw → 라운드마다 선택 변동 |
+| `pool` | **dry-run 전용.** entropy/random으로 pool 선정 → `pool=0` 마스킹. 이후 라운드는 static/dynamic으로 pool 내 샘플링 |
+
+### Entropy Selection vs Random Selection (stage2 설계 노트)
+
+stage2 dry-run에서 `--selection entropy`(BALD 기반)와 `--selection random`을 비교할 때 다음 특성이 있습니다.
+
+**pool 크기는 동일하나 selected 수는 entropy에서 더 적을 수 있음**
+
+entropy selection은 불확실성이 높은 subject를 global top-k로 선정하므로, pool이 특정 파티션에 집중되는 불균일 분포가 발생합니다. 이후 `_sample_train`이 원본 train 보유량 기준 λ로 각 파티션에서 `min(round(λ), n_pool_i)`개를 선택할 때, pool이 적은 파티션에서 λ보다 적게 뽑히므로 전체 selected 수가 random보다 줄어들 수 있습니다.
+
+**이는 버그가 아니라 설계상 이점**
+
+pool이 큰 파티션(=고엔트로피 subject가 집중된 "most informative node")은 매 라운드 pool 내에서 다양한 subset을 랜덤 샘플링할 여지가 크고, pool이 작은 파티션은 pool 전체를 안정적으로 활용합니다. 결과적으로:
+
+- most informative node가 학습을 주도하면서 라운드 간 **sample diversity**를 유지
+- random pool 대비 단조로운 반복 선택이 줄어들어 FL 수렴에 유리할 수 있음
+- selected 수가 적다는 것은 다음 라운드에서 선택될 여지가 남아 있다는 의미
+
+이 특성은 fedpod에서 the most informative node가 학습을 주도하면서도 과적합을 방지하는 핵심 메커니즘입니다.
 
 ## 실행 명령
 

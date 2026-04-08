@@ -80,10 +80,11 @@ class Aggregator:
 
     # ── Split CSV 초기화 (dry-run) ──────────────────────────────────────────
     def _sample_train(self, df, col):
-        """전체 기관의 평균 train 수로 공통 λ를 정하고, 기관별로 Poisson(λ) 샘플링."""
-        partitions = sorted(
-            df[df["Partition_ID"].notna() & (df["TrainOrVal"] == "train")]["Partition_ID"].unique()
-        )
+        """전체 기관의 원본 train 수로 공통 λ를 정하고, 기관별로 Poisson(λ) 샘플링.
+        pool 컬럼이 있으면 pool=1 subject만 샘플링 대상으로 제한하되 λ는 원본 수 기준."""
+        has_pool = "pool" in df.columns
+        partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].unique())
+        # λ: 원본 train 보유량 기준 (pool 마스킹 무관)
         per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
                  for p in partitions]
         lam = np.mean(per_n) * self.args.sampling_rate
@@ -92,12 +93,18 @@ class Aggregator:
 
         df[col] = None
         for p, n_total in zip(partitions, per_n):
-            train_idx = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")].index
-            # n = int(np.clip(np.random.poisson(lam), 1, n_total)) # random poisson
-            n = int(np.clip(round(lam), 1, n_total)) # strict poisson
-            selected = set(pd.Index(train_idx).to_series().sample(n=n, random_state=None).values)
-            df.loc[train_idx, col] = train_idx.map(lambda i: 1 if i in selected else 0)
-            log.info("  Partition %s — train=%d  selected=%d", p, n_total, n)
+            if has_pool:
+                pool_idx   = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train") & (df["pool"] == 1)].index
+                nopool_idx = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train") & (df["pool"] != 1)].index
+                df.loc[nopool_idx, col] = 0
+            else:
+                pool_idx = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")].index
+            n_pool = len(pool_idx)
+            n = int(np.clip(round(lam), 1, n_pool)) if n_pool > 0 else 0
+            if n_pool > 0:
+                selected = set(pd.Index(pool_idx).to_series().sample(n=n, random_state=None).values)
+                df.loc[pool_idx, col] = [1 if i in selected else 0 for i in pool_idx]
+            log.info("  Partition %s — train=%d  pool=%d  selected=%d", p, n_total, n_pool, n)
 
         df[col] = df[col].astype("Int64")
         return df
@@ -118,10 +125,13 @@ class Aggregator:
             else:  # random
                 df = self._sample_train(df, "_pool_tmp")
             non_pool = (df["TrainOrVal"] == "train") & (df["_pool_tmp"] == 0)
-            df.loc[non_pool, "Partition_ID"] = pd.NA
+            df["pool"] = pd.NA
+            df.loc[df["TrainOrVal"] == "train", "pool"] = 1
+            df.loc[non_pool, "pool"] = 0
+            df["pool"] = df["pool"].astype("Int64")
             df = df.drop(columns=["_pool_tmp"])
-            log.info("Pool patch — %d train subjects masked (Partition_ID=NA) (selection=%s)",
-                    int(non_pool.sum()), self.args.selection)
+            log.info("Pool — %d / %d train subjects in pool (selection=%s)",
+                    int((~non_pool & (df["TrainOrVal"] == "train")).sum()), int((df["TrainOrVal"] == "train").sum()), self.args.selection)
             # Step 2: pool 내에서 per-partition Poisson 샘플링 → R00
             df = self._sample_train(df, "R00")
         else:
@@ -147,11 +157,13 @@ class Aggregator:
     def _update_split(self, current_split_csv, round_idx, agg_state=None):
         next_round = round_idx + 1
         df = pd.read_csv(current_split_csv)
-        # CSV 읽기 시 NA 포함 컬럼이 float으로 변환되는 문제 방지
+        # CSV 읽기 시 정수 컬럼이 float으로 변환되는 문제 방지
         df["Partition_ID"] = df["Partition_ID"].astype("Int64")
         for col in df.columns:
             if col[0] == "R" and col[1:].isdigit():
                 df[col] = df[col].astype("Int64")
+        if "pool" in df.columns:
+            df["pool"] = df["pool"].astype("Int64")
         next_col = f"R{next_round:02d}"
         if self.args.sampling_mode == "dynamic":
             if self.args.selection == "entropy":
@@ -243,9 +255,7 @@ class Aggregator:
         """모델 committee로 전체 train subject 추론 → 예측 평균 엔트로피 기준 global top-k 선택."""
         import nibabel as nib
 
-        partitions = sorted(
-            df[df["Partition_ID"].notna() & (df["TrainOrVal"] == "train")]["Partition_ID"].unique()
-        )
+        partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].unique())
         per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
                  for p in partitions]
         lam = np.mean(per_n) * self.args.sampling_rate
