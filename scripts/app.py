@@ -109,7 +109,7 @@ def main():
 
     # Training
     parser.add_argument("--batch",           type=int,   default=2,                                  help="배치 크기")
-    parser.add_argument("--lr",              type=float, default=5e-3,                               help="학습률")
+    parser.add_argument("--lr",              type=float, default=1e-3,                               help="학습률")
     parser.add_argument("--gpu",             type=int,   default=1,                                  help="GPU 사용 여부 (1/0)")
 
     # FL rounds

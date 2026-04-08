@@ -48,6 +48,9 @@ spec:
   templates:
 
   # ── DAG ───────────────────────────────────────────────────────────────────
+  # rounds=5, epochs=4, partitions=1,2,3,10,22,24,25,26,28
+  # ckpt 경로 형식: inst{PP}/R05r{rr}/best.pt
+  # epoch offset:  r0=0, r1=4, r2=8, r3=12, r4=16
   - name: stage1-test
     dag:
       tasks:
@@ -65,8 +68,15 @@ spec:
           - name: partition
             value: "{{item.partition}}"
         withItems:
-        - { partition: "1" }
-        - { partition: "2" }
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
 
       - name: agg-r0
         template: agg-job
@@ -78,7 +88,7 @@ spec:
           - name: round
             value: "0"
 
-      # Round 1: 각 기관 자신의 R03r00/best.pt 에서 이어서 학습
+      # Round 1: 각 기관 자신의 R05r00/best.pt 에서 이어서 학습
       - name: train-r1
         template: train-job
         dependencies: [agg-r0]
@@ -87,16 +97,23 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R03r00/split.csv"
+            value: "/checkpoints/stage1/agg/R05r00/split.csv"
           - name: round
             value: "1"
           - name: epoch
-            value: "5"
+            value: "4"
           - name: init-ckpt
             value: "{{item.ckpt}}"
         withItems:
-        - { partition: "1", ckpt: "/checkpoints/stage1/inst01/R03r00/best.pt" }
-        - { partition: "2", ckpt: "/checkpoints/stage1/inst02/R03r00/best.pt" }
+        - { partition: "1",  ckpt: "/checkpoints/stage1/inst01/R05r00/best.pt" }
+        - { partition: "2",  ckpt: "/checkpoints/stage1/inst02/R05r00/best.pt" }
+        - { partition: "3",  ckpt: "/checkpoints/stage1/inst03/R05r00/best.pt" }
+        - { partition: "10", ckpt: "/checkpoints/stage1/inst10/R05r00/best.pt" }
+        - { partition: "22", ckpt: "/checkpoints/stage1/inst22/R05r00/best.pt" }
+        - { partition: "24", ckpt: "/checkpoints/stage1/inst24/R05r00/best.pt" }
+        - { partition: "25", ckpt: "/checkpoints/stage1/inst25/R05r00/best.pt" }
+        - { partition: "26", ckpt: "/checkpoints/stage1/inst26/R05r00/best.pt" }
+        - { partition: "28", ckpt: "/checkpoints/stage1/inst28/R05r00/best.pt" }
 
       - name: agg-r1
         template: agg-job
@@ -104,11 +121,11 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R03r00/split.csv"
+            value: "/checkpoints/stage1/agg/R05r00/split.csv"
           - name: round
             value: "1"
 
-      # Round 2: 각 기관 자신의 R03r01/best.pt 에서 이어서 학습
+      # Round 2: 각 기관 자신의 R05r01/best.pt 에서 이어서 학습
       - name: train-r2
         template: train-job
         dependencies: [agg-r1]
@@ -117,16 +134,23 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R03r01/split.csv"
+            value: "/checkpoints/stage1/agg/R05r01/split.csv"
           - name: round
             value: "2"
           - name: epoch
-            value: "10"
+            value: "8"
           - name: init-ckpt
             value: "{{item.ckpt}}"
         withItems:
-        - { partition: "1", ckpt: "/checkpoints/stage1/inst01/R03r01/best.pt" }
-        - { partition: "2", ckpt: "/checkpoints/stage1/inst02/R03r01/best.pt" }
+        - { partition: "1",  ckpt: "/checkpoints/stage1/inst01/R05r01/best.pt" }
+        - { partition: "2",  ckpt: "/checkpoints/stage1/inst02/R05r01/best.pt" }
+        - { partition: "3",  ckpt: "/checkpoints/stage1/inst03/R05r01/best.pt" }
+        - { partition: "10", ckpt: "/checkpoints/stage1/inst10/R05r01/best.pt" }
+        - { partition: "22", ckpt: "/checkpoints/stage1/inst22/R05r01/best.pt" }
+        - { partition: "24", ckpt: "/checkpoints/stage1/inst24/R05r01/best.pt" }
+        - { partition: "25", ckpt: "/checkpoints/stage1/inst25/R05r01/best.pt" }
+        - { partition: "26", ckpt: "/checkpoints/stage1/inst26/R05r01/best.pt" }
+        - { partition: "28", ckpt: "/checkpoints/stage1/inst28/R05r01/best.pt" }
 
       - name: agg-r2
         template: agg-job
@@ -134,9 +158,83 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "/checkpoints/stage1/agg/R03r01/split.csv"
+            value: "/checkpoints/stage1/agg/R05r01/split.csv"
           - name: round
             value: "2"
+
+      # Round 3: 각 기관 자신의 R05r02/best.pt 에서 이어서 학습
+      - name: train-r3
+        template: train-job
+        dependencies: [agg-r2]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "/checkpoints/stage1/agg/R05r02/split.csv"
+          - name: round
+            value: "3"
+          - name: epoch
+            value: "12"
+          - name: init-ckpt
+            value: "{{item.ckpt}}"
+        withItems:
+        - { partition: "1",  ckpt: "/checkpoints/stage1/inst01/R05r02/best.pt" }
+        - { partition: "2",  ckpt: "/checkpoints/stage1/inst02/R05r02/best.pt" }
+        - { partition: "3",  ckpt: "/checkpoints/stage1/inst03/R05r02/best.pt" }
+        - { partition: "10", ckpt: "/checkpoints/stage1/inst10/R05r02/best.pt" }
+        - { partition: "22", ckpt: "/checkpoints/stage1/inst22/R05r02/best.pt" }
+        - { partition: "24", ckpt: "/checkpoints/stage1/inst24/R05r02/best.pt" }
+        - { partition: "25", ckpt: "/checkpoints/stage1/inst25/R05r02/best.pt" }
+        - { partition: "26", ckpt: "/checkpoints/stage1/inst26/R05r02/best.pt" }
+        - { partition: "28", ckpt: "/checkpoints/stage1/inst28/R05r02/best.pt" }
+
+      - name: agg-r3
+        template: agg-job
+        dependencies: [train-r3]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "/checkpoints/stage1/agg/R05r02/split.csv"
+          - name: round
+            value: "3"
+
+      # Round 4: 각 기관 자신의 R05r03/best.pt 에서 이어서 학습
+      - name: train-r4
+        template: train-job
+        dependencies: [agg-r3]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "/checkpoints/stage1/agg/R05r03/split.csv"
+          - name: round
+            value: "4"
+          - name: epoch
+            value: "16"
+          - name: init-ckpt
+            value: "{{item.ckpt}}"
+        withItems:
+        - { partition: "1",  ckpt: "/checkpoints/stage1/inst01/R05r03/best.pt" }
+        - { partition: "2",  ckpt: "/checkpoints/stage1/inst02/R05r03/best.pt" }
+        - { partition: "3",  ckpt: "/checkpoints/stage1/inst03/R05r03/best.pt" }
+        - { partition: "10", ckpt: "/checkpoints/stage1/inst10/R05r03/best.pt" }
+        - { partition: "22", ckpt: "/checkpoints/stage1/inst22/R05r03/best.pt" }
+        - { partition: "24", ckpt: "/checkpoints/stage1/inst24/R05r03/best.pt" }
+        - { partition: "25", ckpt: "/checkpoints/stage1/inst25/R05r03/best.pt" }
+        - { partition: "26", ckpt: "/checkpoints/stage1/inst26/R05r03/best.pt" }
+        - { partition: "28", ckpt: "/checkpoints/stage1/inst28/R05r03/best.pt" }
+
+      - name: agg-r4
+        template: agg-job
+        dependencies: [train-r4]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "/checkpoints/stage1/agg/R05r03/split.csv"
+          - name: round
+            value: "4"
 
   # ── Dry-run Job ──────────────────────────────────────────────────────────
   - name: dry-run-job
@@ -201,11 +299,11 @@ spec:
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "--rounds"
-      - "3"
+      - "5"
       - "--round"
       - "0"
       - "-E"
-      - "5"
+      - "4"
       - "--epoch"
       - "0"
       resources:
@@ -257,11 +355,11 @@ spec:
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "--rounds"
-      - "3"
+      - "5"
       - "--round"
       - "{{inputs.parameters.round}}"
       - "-E"
-      - "5"
+      - "4"
       - "--epoch"
       - "{{inputs.parameters.epoch}}"
       - "--init-ckpt"
@@ -315,13 +413,13 @@ spec:
       - "--selection"
       - "random"
       - "--rounds"
-      - "3"
+      - "5"
       - "--round"
       - "{{inputs.parameters.round}}"
       - "--epochs"
-      - "5"
+      - "4"
       - "--partitions"
-      - "1,2"
+      - "1,2,3,10,22,24,25,26,28"
       resources:
         requests:
           cpu: "2"
