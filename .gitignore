@@ -5,4 +5,6 @@ experiments/*
 !experiments/.gitkeep
 checkpoints/*
 !checkpoints/.gitkeep
+runs/*
+!runs/.gitkeep
 sample
