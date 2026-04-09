@@ -30,6 +30,10 @@ spec:
       value: "/checkpoints"
     - name: runs-root
       value: "/runs"
+    - name: selection
+      value: "entropy"
+    - name: agg-sampling-mode
+      value: "dynamic"
 
   volumes:
   - name: app-volume
@@ -292,7 +296,7 @@ spec:
       - "--sampling-mode"
       - "pool"
       - "--selection"
-      - "entropy"
+      - "{{workflow.parameters.selection}}"
       - "--in-ch"
       - "5"
       - "--out-classes"
@@ -444,7 +448,7 @@ spec:
       - "--sampling-rate"
       - "1.0"
       - "--sampling-mode"
-      - "dynamic"
+      - "{{workflow.parameters.agg-sampling-mode}}"
       - "--rounds"
       - "5"
       - "--round"

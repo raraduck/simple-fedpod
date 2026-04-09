@@ -99,6 +99,8 @@ class App:
             pst_dice     = trainer.eval_dice()
             avg_trn_loss = sum(trn_losses) / len(trn_losses)
             avg_val_loss = sum(val_losses)  / len(val_losses)
+            prv_dice_avg = sum(prv_dice.values()) / len(prv_dice) if prv_dice else 0.0
+            pst_dice_avg = sum(pst_dice.values()) / len(pst_dice) if pst_dice else 0.0
 
             # ── metrics.json (agg.py PID 계산용) ──────────────────────────
             metrics = {
@@ -111,6 +113,8 @@ class App:
                 "pst_val_loss": round(pst_val,      6),
                 "prv_dice":     {k: round(v, 6) for k, v in prv_dice.items()},
                 "pst_dice":     {k: round(v, 6) for k, v in pst_dice.items()},
+                "prv_dice_avg": round(prv_dice_avg, 6),
+                "pst_dice_avg": round(pst_dice_avg, 6),
             }
             with open(os.path.join(ckpt_dir, "metrics.json"), "w") as f:
                 json.dump(metrics, f, indent=2)
@@ -129,16 +133,31 @@ class App:
                 writer.add_scalar("rnd_val/_prvpst", prv_val,      self.args.round)
                 writer.add_scalar("rnd_val/_prvpst", pst_val,      self.args.round)
                 # epoch 단위 loss (x = global epoch 번호)
-                writer.add_scalar("ech_val/_prvpst", prv_val, epoch_start)
-                writer.add_scalar("ech_val/_prvpst", pst_val, epoch_end)
-                # round 단위 dice (x = round 번호)
+                writer.add_scalar("ech_val/prv",     prv_val,      epoch_start)
+                writer.add_scalar("ech_val/avg",     avg_val_loss, epoch_end)
+                writer.add_scalar("ech_val/pst",     pst_val,      epoch_end)
+                writer.add_scalar("ech_val/_prvpst", prv_val,      epoch_start)
+                writer.add_scalar("ech_val/_prvpst", pst_val,      epoch_end)
+                # round 단위 dice — 클래스 평균 (x = round 번호)
+                writer.add_scalar("rnd_dice/prv_avg",     prv_dice_avg, self.args.round)
+                writer.add_scalar("rnd_dice/pst_avg",     pst_dice_avg, self.args.round)
+                writer.add_scalar("rnd_dice/_prvpst_avg", prv_dice_avg, self.args.round)
+                writer.add_scalar("rnd_dice/_prvpst_avg", pst_dice_avg, self.args.round)
+                # round 단위 dice — 클래스별 (x = round 번호)
                 for name in lnam:
-                    writer.add_scalar(f"rnd_dice/prv_{name}",     prv_dice[name],  self.args.round)
-                    writer.add_scalar(f"rnd_dice/pst_{name}",     pst_dice[name],  self.args.round)
-                    writer.add_scalar(f"rnd_dice/_prvpst_{name}", prv_dice[name],  self.args.round)
-                    writer.add_scalar(f"rnd_dice/_prvpst_{name}", pst_dice[name],  self.args.round)
-                # epoch 단위 dice (x = global epoch 번호)
+                    writer.add_scalar(f"rnd_dice/prv_{name}",     prv_dice[name], self.args.round)
+                    writer.add_scalar(f"rnd_dice/pst_{name}",     pst_dice[name], self.args.round)
+                    writer.add_scalar(f"rnd_dice/_prvpst_{name}", prv_dice[name], self.args.round)
+                    writer.add_scalar(f"rnd_dice/_prvpst_{name}", pst_dice[name], self.args.round)
+                # epoch 단위 dice — 클래스 평균 (x = global epoch 번호)
+                writer.add_scalar("ech_dice/prv_avg",     prv_dice_avg, epoch_start)
+                writer.add_scalar("ech_dice/pst_avg",     pst_dice_avg, epoch_end)
+                writer.add_scalar("ech_dice/_prvpst_avg", prv_dice_avg, epoch_start)
+                writer.add_scalar("ech_dice/_prvpst_avg", pst_dice_avg, epoch_end)
+                # epoch 단위 dice — 클래스별 (x = global epoch 번호)
                 for name in lnam:
+                    writer.add_scalar(f"ech_dice/prv_{name}",     prv_dice[name], epoch_start)
+                    writer.add_scalar(f"ech_dice/pst_{name}",     pst_dice[name], epoch_end)
                     writer.add_scalar(f"ech_dice/_prvpst_{name}", prv_dice[name], epoch_start)
                     writer.add_scalar(f"ech_dice/_prvpst_{name}", pst_dice[name], epoch_end)
             log.info("TensorBoard — round=%d  prv=%.4f  avg_trn=%.4f  avg_val=%.4f  pst=%.4f",
