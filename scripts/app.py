@@ -84,9 +84,10 @@ class App:
         log.info("Round %d / %d  ckpt_dir=%s", self.args.round, self.args.rounds, ckpt_dir)
         trainer = Trainer(model, train_loader, val_loader,
                           lr=self.args.lr, device=device, ckpt_dir=ckpt_dir,
-                          epoch_offset=self.args.epoch)
+                          epoch_offset=self.args.epoch, lnam=lnam)
 
-        prv_val = trainer.eval()
+        prv_val  = trainer.eval()
+        prv_dice = trainer.eval_dice()
 
         trn_losses, val_losses = [], []
         for epoch in range(trainer.start_epoch, self.args.epoch + self.args.epochs + 1):
@@ -95,6 +96,7 @@ class App:
 
         if trn_losses:
             pst_val      = trainer.eval()
+            pst_dice     = trainer.eval_dice()
             avg_trn_loss = sum(trn_losses) / len(trn_losses)
             avg_val_loss = sum(val_losses)  / len(val_losses)
 
@@ -107,6 +109,8 @@ class App:
                 "avg_val_loss": round(avg_val_loss, 6),
                 "prv_val_loss": round(prv_val,      6),
                 "pst_val_loss": round(pst_val,      6),
+                "prv_dice":     {k: round(v, 6) for k, v in prv_dice.items()},
+                "pst_dice":     {k: round(v, 6) for k, v in pst_dice.items()},
             }
             with open(os.path.join(ckpt_dir, "metrics.json"), "w") as f:
                 json.dump(metrics, f, indent=2)
@@ -117,18 +121,31 @@ class App:
             epoch_start = self.args.epoch
             epoch_end   = self.args.epoch + self.args.epochs
             with SummaryWriter(runs_dir) as writer:
-                # round 단위 (x = round 번호)
-                writer.add_scalar("rnd_trn/loss",  avg_trn_loss, self.args.round)
-                writer.add_scalar("rnd_val/prv",   prv_val,      self.args.round)
-                writer.add_scalar("rnd_val/avg",   avg_val_loss, self.args.round)
-                writer.add_scalar("rnd_val/pst",   pst_val,      self.args.round)
-                writer.add_scalar("rnd_val/_prvpst", prv_val,     self.args.round)
-                writer.add_scalar("rnd_val/_prvpst", pst_val,     self.args.round)
-                # epoch 단위 (x = global epoch 번호)
+                # round 단위 loss (x = round 번호)
+                writer.add_scalar("rnd_trn/loss",    avg_trn_loss, self.args.round)
+                writer.add_scalar("rnd_val/prv",     prv_val,      self.args.round)
+                writer.add_scalar("rnd_val/avg",     avg_val_loss, self.args.round)
+                writer.add_scalar("rnd_val/pst",     pst_val,      self.args.round)
+                writer.add_scalar("rnd_val/_prvpst", prv_val,      self.args.round)
+                writer.add_scalar("rnd_val/_prvpst", pst_val,      self.args.round)
+                # epoch 단위 loss (x = global epoch 번호)
                 writer.add_scalar("ech_val/_prvpst", prv_val, epoch_start)
                 writer.add_scalar("ech_val/_prvpst", pst_val, epoch_end)
+                # round 단위 dice (x = round 번호)
+                for name in lnam:
+                    writer.add_scalar(f"rnd_dice/prv_{name}",     prv_dice[name],  self.args.round)
+                    writer.add_scalar(f"rnd_dice/pst_{name}",     pst_dice[name],  self.args.round)
+                    writer.add_scalar(f"rnd_dice/_prvpst_{name}", prv_dice[name],  self.args.round)
+                    writer.add_scalar(f"rnd_dice/_prvpst_{name}", pst_dice[name],  self.args.round)
+                # epoch 단위 dice (x = global epoch 번호)
+                for name in lnam:
+                    writer.add_scalar(f"ech_dice/_prvpst_{name}", prv_dice[name], epoch_start)
+                    writer.add_scalar(f"ech_dice/_prvpst_{name}", pst_dice[name], epoch_end)
             log.info("TensorBoard — round=%d  prv=%.4f  avg_trn=%.4f  avg_val=%.4f  pst=%.4f",
                      self.args.round, prv_val, avg_trn_loss, avg_val_loss, pst_val)
+            log.info("Dice prv=%s  pst=%s",
+                     {k: f"{v:.4f}" for k, v in prv_dice.items()},
+                     {k: f"{v:.4f}" for k, v in pst_dice.items()})
 
 
 def main():

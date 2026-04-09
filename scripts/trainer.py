@@ -9,7 +9,7 @@ log = logging.getLogger(__name__)
 
 
 class Trainer:
-    def __init__(self, model, train_loader, val_loader, lr, device, ckpt_dir, epoch_offset=0):
+    def __init__(self, model, train_loader, val_loader, lr, device, ckpt_dir, epoch_offset=0, lnam=None):
         self.model        = model
         self.train_loader = train_loader
         self.val_loader   = val_loader
@@ -19,6 +19,7 @@ class Trainer:
         self.ckpt_dir     = ckpt_dir
         self.best_val     = float("inf")
         self.start_epoch  = epoch_offset + 1  # round 간 이어받기
+        self.lnam         = lnam or []
 
         os.makedirs(ckpt_dir, exist_ok=True)
         self._auto_resume()  # round 내 재시작 (있으면 덮어씀)
@@ -75,6 +76,25 @@ class Trainer:
             labels = labels.to(self.device)
             total_loss += self._loss(images, labels).item()
         return total_loss / len(self.val_loader)
+
+    @torch.no_grad()
+    def eval_dice(self):
+        """클래스별 hard Dice 계산 (sigmoid > 0.5, global aggregate over val set)."""
+        self.model.eval()
+        n = len(self.lnam)
+        tp = torch.zeros(n)
+        fp = torch.zeros(n)
+        fn = torch.zeros(n)
+        for images, labels in self.val_loader:
+            images = images.to(self.device)
+            labels = labels.to(self.device)
+            preds = (torch.sigmoid(self.model(images)) > 0.5).float()
+            spatial = list(range(2, preds.dim()))
+            tp += (preds * labels).sum(dim=[0] + spatial).cpu()
+            fp += (preds * (1 - labels)).sum(dim=[0] + spatial).cpu()
+            fn += ((1 - preds) * labels).sum(dim=[0] + spatial).cpu()
+        dice = (2 * tp) / (2 * tp + fp + fn + 1e-8)
+        return {name: dice[i].item() for i, name in enumerate(self.lnam)}
 
     @torch.no_grad()
     def val_epoch(self, epoch):
