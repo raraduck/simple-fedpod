@@ -457,6 +457,8 @@ spec:
       - "4"
       - "--partitions"
       - "1,2,3,10,22,24,25,26,28"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
       resources:
         requests:
           cpu: "2"
@@ -471,3 +473,5 @@ spec:
         mountPath: /experiments
       - name: checkpoints-volume
         mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs

@@ -1,9 +1,11 @@
+import json
 import logging
 import os
 
 import numpy as np
 import pandas as pd
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 from models.unet3d import UNet, PlainBlock, ResidualBlock
 
@@ -68,6 +70,9 @@ class Aggregator:
         # split CSV 업데이트 (next round 컬럼 추가)
         next_split = self._update_split(self.args.split, self.args.round, agg_state)
 
+        # 기관 평균 TensorBoard 기록
+        self._write_inst_avg_tensorboard(partitions)
+
         # Argo output parameters 기록
         next_round = self.args.round + 1
         next_epoch = next_round * self.args.epochs
@@ -77,6 +82,81 @@ class Aggregator:
         self._write_output("next-split-csv",  next_split)
         log.info("Next — round=%d  epoch_offset=%d  init_ckpt=%s  split=%s",
                  next_round, next_epoch, agg_path, next_split)
+
+    # ── 기관 평균 TensorBoard ───────────────────────────────────────────────
+    def _write_inst_avg_tensorboard(self, partitions):
+        """각 기관의 metrics.json을 읽어 평균을 inst_avg TensorBoard에 기록."""
+        metrics_list = []
+        for p in partitions:
+            m_path = os.path.join(self.args.ckpt_root, self.args.job,
+                                  f"inst{p:02d}",
+                                  f"R{self.args.rounds:02d}r{self.args.round:02d}",
+                                  "metrics.json")
+            if not os.path.exists(m_path):
+                log.warning("inst_avg — metrics.json not found: %s", m_path)
+                continue
+            with open(m_path) as f:
+                metrics_list.append(json.load(f))
+
+        if not metrics_list:
+            log.warning("inst_avg — no metrics.json found, skipping TensorBoard")
+            return
+
+        def _mean(key):
+            return sum(m[key] for m in metrics_list) / len(metrics_list)
+
+        avg_trn_loss = _mean("avg_trn_loss")
+        avg_val_loss = _mean("avg_val_loss")
+        prv_val      = _mean("prv_val_loss")
+        pst_val      = _mean("pst_val_loss")
+        prv_dice_avg = _mean("prv_dice_avg")
+        pst_dice_avg = _mean("pst_dice_avg")
+
+        lnam     = list(metrics_list[0]["prv_dice"].keys())
+        prv_dice = {n: sum(m["prv_dice"][n] for m in metrics_list) / len(metrics_list) for n in lnam}
+        pst_dice = {n: sum(m["pst_dice"][n] for m in metrics_list) / len(metrics_list) for n in lnam}
+
+        r           = self.args.round
+        epoch_start = self.args.round * self.args.epochs
+        epoch_end   = (self.args.round + 1) * self.args.epochs
+
+        runs_dir = os.path.join(self.args.runs_root, self.args.job, "inst_avg")
+        with SummaryWriter(runs_dir) as writer:
+            # round 단위 (x = round 번호)
+            writer.add_scalar("rnd_trn_avg_loss/avg",    avg_trn_loss, r)
+            writer.add_scalar("rnd_val_avg_loss/avg",    avg_val_loss, r)
+            writer.add_scalar("rnd_val_prv_loss/avg",    prv_val,      r)
+            writer.add_scalar("rnd_val_pst_loss/avg",    pst_val,      r)
+            writer.add_scalar("rnd_val_prvpst_loss/avg", prv_val,      r)
+            writer.add_scalar("rnd_val_prvpst_loss/avg", pst_val,      r)
+            writer.add_scalar("rnd_val_prv_dice/avg",    prv_dice_avg, r)
+            writer.add_scalar("rnd_val_pst_dice/avg",    pst_dice_avg, r)
+            writer.add_scalar("rnd_val_prvpst_dice/avg", prv_dice_avg, r)
+            writer.add_scalar("rnd_val_prvpst_dice/avg", pst_dice_avg, r)
+            for name in lnam:
+                writer.add_scalar(f"rnd_val_prv_dice/{name}",    prv_dice[name], r)
+                writer.add_scalar(f"rnd_val_pst_dice/{name}",    pst_dice[name], r)
+                writer.add_scalar(f"rnd_val_prvpst_dice/{name}", prv_dice[name], r)
+                writer.add_scalar(f"rnd_val_prvpst_dice/{name}", pst_dice[name], r)
+            # epoch 단위 (x = global epoch 번호)
+            writer.add_scalar("ech_val_avg_loss/avg",    avg_val_loss, epoch_end)
+            writer.add_scalar("ech_val_prv_loss/avg",    prv_val,      epoch_start)
+            writer.add_scalar("ech_val_pst_loss/avg",    pst_val,      epoch_end)
+            writer.add_scalar("ech_val_prvpst_loss/avg", prv_val,      epoch_start)
+            writer.add_scalar("ech_val_prvpst_loss/avg", pst_val,      epoch_end)
+            writer.add_scalar("ech_val_prv_dice/avg",    prv_dice_avg, epoch_start)
+            writer.add_scalar("ech_val_pst_dice/avg",    pst_dice_avg, epoch_end)
+            writer.add_scalar("ech_val_prvpst_dice/avg", prv_dice_avg, epoch_start)
+            writer.add_scalar("ech_val_prvpst_dice/avg", pst_dice_avg, epoch_end)
+            for name in lnam:
+                writer.add_scalar(f"ech_val_prv_dice/{name}",    prv_dice[name], epoch_start)
+                writer.add_scalar(f"ech_val_pst_dice/{name}",    pst_dice[name], epoch_end)
+                writer.add_scalar(f"ech_val_prvpst_dice/{name}", prv_dice[name], epoch_start)
+                writer.add_scalar(f"ech_val_prvpst_dice/{name}", pst_dice[name], epoch_end)
+
+        log.info("inst_avg TensorBoard — round=%d  n=%d  prv_loss=%.4f  pst_loss=%.4f"
+                 "  prv_dice=%.4f  pst_dice=%.4f",
+                 r, len(metrics_list), prv_val, pst_val, prv_dice_avg, pst_dice_avg)
 
     # ── Split CSV 초기화 (dry-run) ──────────────────────────────────────────
     def _sample_train(self, df, col):
@@ -399,6 +479,7 @@ def main():
     parser.add_argument("-J", "--job",      default="stage1",                   help="job 이름 (e.g. stage1 → stage1-p01, stage1/agg/)")
     parser.add_argument("--partitions",     default="",                         help="집계할 partition ID 목록 (콤마 구분, e.g. '1,2,5')")
     parser.add_argument("--ckpt-root",      default="/checkpoints",             help="체크포인트 루트 경로")
+    parser.add_argument("--runs-root",      default="/runs",                    help="TensorBoard runs 루트 경로")
 
     # Model (dry-run 시 초기화에 필요)
     parser.add_argument("--in-ch",          type=int,   default=4,              help="입력 채널 수")
