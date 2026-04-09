@@ -12,7 +12,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
 RUN pip3 install --no-cache-dir --break-system-packages \
-    nibabel numpy pandas
+    nibabel numpy pandas tensorboard
 
 WORKDIR /app
 
