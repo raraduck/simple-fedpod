@@ -69,6 +69,7 @@ def main():
 
     # FL
     parser.add_argument("--round",           type=int, default=0,                                   help="현재 FL 라운드")
+    parser.add_argument("--rounds",          type=int, default=1,                                   help="총 FL 라운드 수 (미사용, yaml 호환용)")
     parser.add_argument("--epochs",          type=int, default=4,                                   help="라운드당 에폭 수 (epoch 축 계산용)")
     parser.add_argument("--init-ckpt",       default="",                                            help="평가할 agg.pt 경로")
 
