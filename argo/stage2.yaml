@@ -107,6 +107,18 @@ spec:
         - { partition: "26" }
         - { partition: "28" }
 
+      - name: eval-r0
+        template: eval-job
+        dependencies: [dry-run]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
+          - name: round
+            value: "0"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/agg.pt"
+
       - name: agg-r0
         template: agg-job
         dependencies: [train-r0]
@@ -143,6 +155,18 @@ spec:
         - { partition: "25" }
         - { partition: "26" }
         - { partition: "28" }
+
+      - name: eval-r1
+        template: eval-job
+        dependencies: [agg-r0]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/split.csv"
+          - name: round
+            value: "1"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/agg.pt"
 
       - name: agg-r1
         template: agg-job
@@ -181,6 +205,18 @@ spec:
         - { partition: "26" }
         - { partition: "28" }
 
+      - name: eval-r2
+        template: eval-job
+        dependencies: [agg-r1]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/split.csv"
+          - name: round
+            value: "2"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/agg.pt"
+
       - name: agg-r2
         template: agg-job
         dependencies: [train-r2]
@@ -218,6 +254,18 @@ spec:
         - { partition: "26" }
         - { partition: "28" }
 
+      - name: eval-r3
+        template: eval-job
+        dependencies: [agg-r2]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/split.csv"
+          - name: round
+            value: "3"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/agg.pt"
+
       - name: agg-r3
         template: agg-job
         dependencies: [train-r3]
@@ -254,6 +302,18 @@ spec:
         - { partition: "25" }
         - { partition: "26" }
         - { partition: "28" }
+
+      - name: eval-r4
+        template: eval-job
+        dependencies: [agg-r3]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/split.csv"
+          - name: round
+            value: "4"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/agg.pt"
 
       - name: agg-r4
         template: agg-job
@@ -337,6 +397,77 @@ spec:
         mountPath: /experiments
       - name: checkpoints-volume
         mountPath: /checkpoints
+
+  # ── Eval Job (generalization — agg.pt 를 모든 기관 val 에 평가) ──────────
+  - name: eval-job
+    inputs:
+      parameters:
+      - name: split-csv
+      - name: round
+      - name: init-ckpt
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "gen_eval.py"]
+      args:
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--rounds"
+      - "5"
+      - "--epochs"
+      - "4"
+      - "--init-ckpt"
+      - "{{inputs.parameters.init-ckpt}}"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
+      - "-C"
+      - "[t1,t1ce,t2,flair,seg]"
+      - "-G"
+      - "[[1,2,4],[1,4],[4]]"
+      - "-N"
+      - "[wt,tc,et]"
+      - "-I"
+      - "[1,2,3]"
+      - "--gpu"
+      - "1"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "32Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs
+      - name: dshm
+        mountPath: /dev/shm
 
   # ── Train Job (모든 라운드 — FL 규칙: agg.pt 에서 시작) ───────────────────
   - name: train-job
