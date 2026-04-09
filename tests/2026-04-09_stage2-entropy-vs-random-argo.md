@@ -88,6 +88,14 @@ checkpoints/
 
 ### Step 4 — TensorBoard 비교
 
+**runs 디렉토리 구조** (실험당):
+```
+runs/stage2-entropy/
+  inst{PP}/    ← 기관별 학습 기록 (app.py)
+  inst_avg/    ← 기관 평균 (agg.py, 라운드 집계 후)
+  gen_eval/    ← 일반화 평가 (gen_eval.py, train과 병렬)
+```
+
 ```bash
 # 두 실험 오버레이 비교
 tensorboard --logdir_spec \
@@ -95,19 +103,23 @@ tensorboard --logdir_spec \
   random:runs/stage2-random
 ```
 
+**태그 구조**: `(ech|rnd)_(trn|val)_(loss|dice)_(avg|prv|pst|prvpst)/(avg|{name})`
+
 **확인 포인트**
 
-| 패널 | 비교 항목 |
-|------|-----------|
-| `rnd_val_prvpst_loss` | round별 val loss 변화 (entropy vs random) |
-| `rnd_val_prvpst_dice` | round별 평균 Dice 변화 |
-| `rnd_val_pst_dice`    | wt / tc / et 클래스별 최종 Dice |
-| `ech_val_prvpst_loss` | global epoch 축 기준 prv→pst loss 추이 |
-| `ech_val_prvpst_dice` | global epoch 축 기준 prv→pst Dice 추이 |
+| 패널 | entropy | random | gen_eval 오버레이 |
+|------|---------|--------|------------------|
+| `rnd_val_loss_prvpst/avg` | prv→pst loss | prv→pst loss | prv 위치 (글로벌 모델) |
+| `rnd_val_dice_prvpst/avg` | prv→pst dice | prv→pst dice | prv 위치 |
+| `rnd_val_dice_pst/wt` | wt Dice | wt Dice | — |
+| `rnd_val_dice_pst/tc` | tc Dice | tc Dice | — |
+| `rnd_val_dice_pst/et` | et Dice | et Dice | — |
+| `ech_val_loss_prvpst/avg` | epoch 축 loss | epoch 축 loss | epoch 축 prv |
 
 ```bash
-# 단일 실험 내 기관별 비교
+# inst_avg + gen_eval 오버레이 (단일 실험 내 일반화 비교)
 tensorboard --logdir runs/stage2-entropy
+# → inst_avg 와 gen_eval 을 함께 선택하면 fine-tuning 전후 비교 가능
 ```
 
 ---
