@@ -1,8 +1,10 @@
+import json
 import logging
 import os
 
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 from dataset import FeTSDataset, load_split
 from models.unet3d import UNet, PlainBlock, ResidualBlock
@@ -83,9 +85,50 @@ class App:
         trainer = Trainer(model, train_loader, val_loader,
                           lr=self.args.lr, device=device, ckpt_dir=ckpt_dir,
                           epoch_offset=self.args.epoch)
+
+        prv_val = trainer.eval()
+
+        trn_losses, val_losses = [], []
         for epoch in range(trainer.start_epoch, self.args.epoch + self.args.epochs + 1):
-            trainer.train_epoch(epoch)
-            trainer.val_epoch(epoch)
+            trn_losses.append(trainer.train_epoch(epoch))
+            val_losses.append(trainer.val_epoch(epoch))
+
+        if trn_losses:
+            pst_val      = trainer.eval()
+            avg_trn_loss = sum(trn_losses) / len(trn_losses)
+            avg_val_loss = sum(val_losses)  / len(val_losses)
+
+            # ── metrics.json (agg.py PID 계산용) ──────────────────────────
+            metrics = {
+                "partition":    self.args.partition,
+                "round":        self.args.round,
+                "n_train":      len(train_subjects),
+                "avg_trn_loss": round(avg_trn_loss, 6),
+                "avg_val_loss": round(avg_val_loss, 6),
+                "prv_val_loss": round(prv_val,      6),
+                "pst_val_loss": round(pst_val,      6),
+            }
+            with open(os.path.join(ckpt_dir, "metrics.json"), "w") as f:
+                json.dump(metrics, f, indent=2)
+
+            # ── TensorBoard ───────────────────────────────────────────────
+            runs_dir = os.path.join(self.args.runs_root, self.args.job,
+                                    f"inst{self.args.partition:02d}")
+            epoch_start = self.args.epoch
+            epoch_end   = self.args.epoch + self.args.epochs
+            with SummaryWriter(runs_dir) as writer:
+                # round 단위 (x = round 번호)
+                writer.add_scalar("rnd_trn/loss",  avg_trn_loss, self.args.round)
+                writer.add_scalar("rnd_val/prv",   prv_val,      self.args.round)
+                writer.add_scalar("rnd_val/avg",   avg_val_loss, self.args.round)
+                writer.add_scalar("rnd_val/pst",   pst_val,      self.args.round)
+                writer.add_scalar("rnd_val/_prvpst", prv_val,     self.args.round)
+                writer.add_scalar("rnd_val/_prvpst", pst_val,     self.args.round)
+                # epoch 단위 (x = global epoch 번호)
+                writer.add_scalar("ech_val/_prvpst", prv_val, epoch_start)
+                writer.add_scalar("ech_val/_prvpst", pst_val, epoch_end)
+            log.info("TensorBoard — round=%d  prv=%.4f  avg_trn=%.4f  avg_val=%.4f  pst=%.4f",
+                     self.args.round, prv_val, avg_trn_loss, avg_val_loss, pst_val)
 
 
 def main():
@@ -121,6 +164,7 @@ def main():
     # Run
     parser.add_argument("-J", "--job",       default="test_run",                                     help="실험 이름")
     parser.add_argument("--ckpt-root",       default="/checkpoints",                                 help="체크포인트 루트 경로")
+    parser.add_argument("--runs-root",       default="/runs",                                        help="TensorBoard runs 루트 경로")
     parser.add_argument("--init-ckpt",       default="",                                             help="초기 모델 경로 (agg.pt) — 미지정 시 random init")
 
     args = parser.parse_args()

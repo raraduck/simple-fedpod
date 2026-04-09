@@ -28,6 +28,8 @@ spec:
       value: "/data/fets128/trainval"
     - name: ckpt-root
       value: "/checkpoints"
+    - name: runs-root
+      value: "/runs"
 
   volumes:
   - name: app-volume
@@ -50,6 +52,11 @@ spec:
       server: 192.168.0.200
       path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/checkpoints
       readOnly: false
+  - name: runs-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/runs
+      readOnly: false
   - name: dshm
     emptyDir:
       medium: Memory
@@ -58,9 +65,9 @@ spec:
   templates:
 
   # ── DAG ───────────────────────────────────────────────────────────────────
-  # rounds=2, epochs=3, partitions=1,2,3,10,22,24,25,26,28
-  # ckpt 경로 형식: agg/R02r{rr}/agg.pt  (FL 규칙: 매 라운드 공유 집계 모델 사용)
-  # epoch offset:  r0=0, r1=3
+  # rounds=5, epochs=4, partitions=1,2,3,10,22,24,25,26,28
+  # ckpt 경로 형식: agg/R05r{rr}/agg.pt  (FL 규칙: 매 라운드 공유 집계 모델 사용)
+  # epoch offset:  r0=0, r1=4, r2=8, r3=12, r4=16
   - name: stage2
     dag:
       tasks:
@@ -106,7 +113,7 @@ spec:
           - name: round
             value: "0"
 
-      # Round 1: agg/R02r00/agg.pt 에서 시작 (FL 규칙)
+      # Round 1: agg/R05r00/agg.pt 에서 시작 (FL 규칙)
       - name: train-r1
         template: train-job
         dependencies: [agg-r0]
@@ -115,13 +122,13 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R02r00/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/split.csv"
           - name: round
             value: "1"
           - name: epoch
-            value: "3"
+            value: "4"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R02r00/agg.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/agg.pt"
         withItems:
         - { partition: "1"  }
         - { partition: "2"  }
@@ -139,17 +146,136 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R02r00/split.csv"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/split.csv"
           - name: round
             value: "1"
+
+      # Round 2: agg/R05r01/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r2
+        template: train-job
+        dependencies: [agg-r1]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/split.csv"
+          - name: round
+            value: "2"
+          - name: epoch
+            value: "8"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: agg-r2
+        template: agg-job
+        dependencies: [train-r2]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/split.csv"
+          - name: round
+            value: "2"
+
+      # Round 3: agg/R05r02/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r3
+        template: train-job
+        dependencies: [agg-r2]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/split.csv"
+          - name: round
+            value: "3"
+          - name: epoch
+            value: "12"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: agg-r3
+        template: agg-job
+        dependencies: [train-r3]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/split.csv"
+          - name: round
+            value: "3"
+
+      # Round 4: agg/R05r03/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r4
+        template: train-job
+        dependencies: [agg-r3]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/split.csv"
+          - name: round
+            value: "4"
+          - name: epoch
+            value: "16"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: agg-r4
+        template: agg-job
+        dependencies: [train-r4]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/split.csv"
+          - name: round
+            value: "4"
 
   # ── Dry-run Job (pool+entropy, GPU 필요) ──────────────────────────────────
   - name: dry-run-job
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       command: ["python3", "agg.py"]
@@ -220,8 +346,16 @@ spec:
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       args:
@@ -236,11 +370,11 @@ spec:
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "--rounds"
-      - "2"
+      - "5"
       - "--round"
       - "{{inputs.parameters.round}}"
       - "--epochs"
-      - "3"
+      - "4"
       - "--epoch"
       - "{{inputs.parameters.epoch}}"
       - "--init-ckpt"
@@ -253,6 +387,8 @@ spec:
       - "[wt,tc,et]"
       - "-I"
       - "[1,2,3]"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
       resources:
         requests:
           cpu: "4"
@@ -271,6 +407,8 @@ spec:
         mountPath: /experiments
       - name: checkpoints-volume
         mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs
       - name: dshm
         mountPath: /dev/shm
 
@@ -283,8 +421,16 @@ spec:
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       command: ["python3", "agg.py"]
@@ -300,11 +446,11 @@ spec:
       - "--sampling-mode"
       - "dynamic"
       - "--rounds"
-      - "2"
+      - "5"
       - "--round"
       - "{{inputs.parameters.round}}"
       - "--epochs"
-      - "3"
+      - "4"
       - "--partitions"
       - "1,2,3,10,22,24,25,26,28"
       resources:

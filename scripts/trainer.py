@@ -66,6 +66,17 @@ class Trainer:
         return mean_loss
 
     @torch.no_grad()
+    def eval(self):
+        """체크포인트 저장 없이 val loss만 계산 (TensorBoard prv/pst 측정용)."""
+        self.model.eval()
+        total_loss = 0.0
+        for images, labels in self.val_loader:
+            images = images.to(self.device)
+            labels = labels.to(self.device)
+            total_loss += self._loss(images, labels).item()
+        return total_loss / len(self.val_loader)
+
+    @torch.no_grad()
     def val_epoch(self, epoch):
         self.model.eval()
         total_loss = 0.0
@@ -74,14 +85,14 @@ class Trainer:
             labels = labels.to(self.device)
             total_loss += self._loss(images, labels).item()
 
-        mean_loss = total_loss / len(self.val_loader)
-        improved = mean_loss < self.best_val
+        avg_val_loss = total_loss / len(self.val_loader)
+        improved = avg_val_loss < self.best_val
         if improved:
-            self.best_val = mean_loss
-            self._save(epoch, mean_loss, "best.pt")
-        self._save(epoch, mean_loss, "latest.pt")
+            self.best_val = avg_val_loss
+            self._save(epoch, avg_val_loss, "best.pt")
+        self._save(epoch, avg_val_loss, "latest.pt")
 
-        log.info("Epoch %3d    val_loss=%.4f%s", epoch, mean_loss, "  *best*" if improved else "")
+        log.info("Epoch %3d    avg_val_loss=%.4f%s", epoch, avg_val_loss, "  *best*" if improved else "")
         # Katib StdOut collector 포맷
-        print("{metricName: val_loss, metricValue: %.4f}" % mean_loss, flush=True)
-        return mean_loss
+        print("{metricName: val_loss, metricValue: %.4f}" % avg_val_loss, flush=True)
+        return avg_val_loss

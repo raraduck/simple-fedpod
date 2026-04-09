@@ -1,10 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  generateName: fedpod-stage1-test-
+  generateName: fedpod-stage1-
   namespace: dwnkim
 spec:
-  entrypoint: stage1-test
+  entrypoint: stage1
   serviceAccountName: default
   podGC:
     strategy: OnPodCompletion
@@ -14,12 +14,20 @@ spec:
     parameters:
     - name: image
       value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.2"
-    - name: job
-      value: "stage1"
     - name: data-path
       value: "/data/fets128/trainval"
+    - name: split-csv
+      value: "/experiments/fets/partition2/fets_split.csv"
     - name: ckpt-root
       value: "/checkpoints"
+    - name: rounds
+      value: "1"
+    - name: round
+      value: "0"
+    - name: epochs
+      value: "3"
+    - name: epoch
+      value: "0"
 
   volumes:
   - name: app-volume
@@ -50,322 +58,53 @@ spec:
   templates:
 
   # ── DAG ───────────────────────────────────────────────────────────────────
-  # rounds=5, epochs=4, partitions=1,2,3,10,22,24,25,26,28
-  # ckpt 경로 형식: inst{PP}/R05r{rr}/best.pt
-  # epoch offset:  r0=0, r1=4, r2=8, r3=12, r4=16
-  - name: stage1-test
+  - name: stage1
     dag:
       tasks:
-
-      # dry-run: init 모델 + R00 split CSV 생성
-      - name: dry-run
-        template: dry-run-job
-
-      # Round 0: random init, init-ckpt 없음
-      - name: train-r0
-        template: train-job-r0
-        dependencies: [dry-run]
-        arguments:
-          parameters:
-          - name: partition
-            value: "{{item.partition}}"
-        withItems:
-        - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "10" }
-        - { partition: "22" }
-        - { partition: "24" }
-        - { partition: "25" }
-        - { partition: "26" }
-        - { partition: "28" }
-
-      - name: agg-r0
-        template: agg-job
-        dependencies: [train-r0]
-        arguments:
-          parameters:
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
-          - name: round
-            value: "0"
-
-      # Round 1: 각 기관 자신의 R05r00/best.pt 에서 이어서 학습
-      - name: train-r1
+      - name: train
         template: train-job
-        dependencies: [agg-r0]
         arguments:
           parameters:
           - name: partition
             value: "{{item.partition}}"
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/split.csv"
-          - name: round
-            value: "1"
-          - name: epoch
-            value: "4"
-          - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r00/best.pt"
+          - name: job-name
+            value: "{{item.job-name}}"
         withItems:
-        - { partition: "1",  inst: "inst01" }
-        - { partition: "2",  inst: "inst02" }
-        - { partition: "3",  inst: "inst03" }
-        - { partition: "10", inst: "inst10" }
-        - { partition: "22", inst: "inst22" }
-        - { partition: "24", inst: "inst24" }
-        - { partition: "25", inst: "inst25" }
-        - { partition: "26", inst: "inst26" }
-        - { partition: "28", inst: "inst28" }
+        - { partition: "1",  job-name: "stage1-p01" }
+        - { partition: "2",  job-name: "stage1-p02" }
 
-      - name: agg-r1
-        template: agg-job
-        dependencies: [train-r1]
-        arguments:
-          parameters:
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r00/split.csv"
-          - name: round
-            value: "1"
-
-      # Round 2: 각 기관 자신의 R05r01/best.pt 에서 이어서 학습
-      - name: train-r2
-        template: train-job
-        dependencies: [agg-r1]
-        arguments:
-          parameters:
-          - name: partition
-            value: "{{item.partition}}"
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/split.csv"
-          - name: round
-            value: "2"
-          - name: epoch
-            value: "8"
-          - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r01/best.pt"
-        withItems:
-        - { partition: "1",  inst: "inst01" }
-        - { partition: "2",  inst: "inst02" }
-        - { partition: "3",  inst: "inst03" }
-        - { partition: "10", inst: "inst10" }
-        - { partition: "22", inst: "inst22" }
-        - { partition: "24", inst: "inst24" }
-        - { partition: "25", inst: "inst25" }
-        - { partition: "26", inst: "inst26" }
-        - { partition: "28", inst: "inst28" }
-
-      - name: agg-r2
-        template: agg-job
-        dependencies: [train-r2]
-        arguments:
-          parameters:
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r01/split.csv"
-          - name: round
-            value: "2"
-
-      # Round 3: 각 기관 자신의 R05r02/best.pt 에서 이어서 학습
-      - name: train-r3
-        template: train-job
-        dependencies: [agg-r2]
-        arguments:
-          parameters:
-          - name: partition
-            value: "{{item.partition}}"
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/split.csv"
-          - name: round
-            value: "3"
-          - name: epoch
-            value: "12"
-          - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r02/best.pt"
-        withItems:
-        - { partition: "1",  inst: "inst01" }
-        - { partition: "2",  inst: "inst02" }
-        - { partition: "3",  inst: "inst03" }
-        - { partition: "10", inst: "inst10" }
-        - { partition: "22", inst: "inst22" }
-        - { partition: "24", inst: "inst24" }
-        - { partition: "25", inst: "inst25" }
-        - { partition: "26", inst: "inst26" }
-        - { partition: "28", inst: "inst28" }
-
-      - name: agg-r3
-        template: agg-job
-        dependencies: [train-r3]
-        arguments:
-          parameters:
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r02/split.csv"
-          - name: round
-            value: "3"
-
-      # Round 4: 각 기관 자신의 R05r03/best.pt 에서 이어서 학습
-      - name: train-r4
-        template: train-job
-        dependencies: [agg-r3]
-        arguments:
-          parameters:
-          - name: partition
-            value: "{{item.partition}}"
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/split.csv"
-          - name: round
-            value: "4"
-          - name: epoch
-            value: "16"
-          - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r03/best.pt"
-        withItems:
-        - { partition: "1",  inst: "inst01" }
-        - { partition: "2",  inst: "inst02" }
-        - { partition: "3",  inst: "inst03" }
-        - { partition: "10", inst: "inst10" }
-        - { partition: "22", inst: "inst22" }
-        - { partition: "24", inst: "inst24" }
-        - { partition: "25", inst: "inst25" }
-        - { partition: "26", inst: "inst26" }
-        - { partition: "28", inst: "inst28" }
-
-      - name: agg-r4
-        template: agg-job
-        dependencies: [train-r4]
-        arguments:
-          parameters:
-          - name: split-csv
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R05r03/split.csv"
-          - name: round
-            value: "4"
-
-  # ── Dry-run Job ──────────────────────────────────────────────────────────
-  - name: dry-run-job
-    metadata:
-      annotations:
-        sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
-    container:
-      image: "{{workflow.parameters.image}}"
-      command: ["python3", "agg.py"]
-      args:
-      - "--dry-run"
-      - "-J"
-      - "{{workflow.parameters.job}}"
-      - "--ckpt-root"
-      - "{{workflow.parameters.ckpt-root}}"
-      - "-c"
-      - "/experiments/fets/partition2/fets_split.csv"
-      - "--sampling-rate"
-      - "1.0"
-      - "--sampling-mode"
-      - "dynamic"
-      - "--selection"
-      - "random"
-      resources:
-        requests:
-          cpu: "2"
-          memory: "4Gi"
-        limits:
-          cpu: "4"
-          memory: "8Gi"
-      volumeMounts:
-      - name: app-volume
-        mountPath: /app
-      - name: experiments-volume
-        mountPath: /experiments
-      - name: checkpoints-volume
-        mountPath: /checkpoints
-
-  # ── Train Job — Round 0 (init-ckpt 없음) ─────────────────────────────────
-  - name: train-job-r0
-    inputs:
-      parameters:
-      - name: partition
-    metadata:
-      annotations:
-        sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
-    container:
-      image: "{{workflow.parameters.image}}"
-      args:
-      - "-D"
-      - "{{workflow.parameters.data-path}}"
-      - "-c"
-      - "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
-      - "-P"
-      - "{{inputs.parameters.partition}}"
-      - "-J"
-      - "{{workflow.parameters.job}}"
-      - "--ckpt-root"
-      - "{{workflow.parameters.ckpt-root}}"
-      - "--rounds"
-      - "5"
-      - "--round"
-      - "0"
-      - "--epochs"
-      - "4"
-      - "--epoch"
-      - "0"
-      resources:
-        requests:
-          cpu: "4"
-          memory: "8Gi"
-          nvidia.com/gpu: "1"
-        limits:
-          cpu: "8"
-          memory: "16Gi"
-          nvidia.com/gpu: "1"
-      volumeMounts:
-      - name: app-volume
-        mountPath: /app
-      - name: data-volume
-        mountPath: /data
-      - name: experiments-volume
-        mountPath: /experiments
-      - name: checkpoints-volume
-        mountPath: /checkpoints
-      - name: dshm
-        mountPath: /dev/shm
-
-  # ── Train Job — Round 1+ (init-ckpt = 이전 라운드 inst best.pt) ───────────
+  # ── Train Job 템플릿 ───────────────────────────────────────────────────────
   - name: train-job
     inputs:
       parameters:
       - name: partition
-      - name: split-csv
-      - name: round
-      - name: epoch
-      - name: init-ckpt
+      - name: job-name
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
     nodeSelector:
-      nvidia.com/gpu.model: rtx4090
+      nvidia.com/gpu.model: rtx3090
     container:
       image: "{{workflow.parameters.image}}"
       args:
       - "-D"
       - "{{workflow.parameters.data-path}}"
       - "-c"
-      - "{{inputs.parameters.split-csv}}"
+      - "{{workflow.parameters.split-csv}}"
       - "-P"
       - "{{inputs.parameters.partition}}"
       - "-J"
-      - "{{workflow.parameters.job}}"
+      - "{{inputs.parameters.job-name}}"
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "--rounds"
-      - "5"
+      - "{{workflow.parameters.rounds}}"
       - "--round"
-      - "{{inputs.parameters.round}}"
+      - "{{workflow.parameters.round}}"
       - "--epochs"
-      - "4"
+      - "{{workflow.parameters.epochs}}"
       - "--epoch"
-      - "{{inputs.parameters.epoch}}"
-      - "--init-ckpt"
-      - "{{inputs.parameters.init-ckpt}}"
+      - "{{workflow.parameters.epoch}}"
       resources:
         requests:
           cpu: "4"
@@ -386,53 +125,3 @@ spec:
         mountPath: /checkpoints
       - name: dshm
         mountPath: /dev/shm
-
-  # ── Agg Job (split CSV 갱신, agg.pt 미사용) ───────────────────────────────
-  - name: agg-job
-    inputs:
-      parameters:
-      - name: split-csv
-      - name: round
-    metadata:
-      annotations:
-        sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
-    container:
-      image: "{{workflow.parameters.image}}"
-      command: ["python3", "agg.py"]
-      args:
-      - "-J"
-      - "{{workflow.parameters.job}}"
-      - "--ckpt-root"
-      - "{{workflow.parameters.ckpt-root}}"
-      - "-c"
-      - "{{inputs.parameters.split-csv}}"
-      - "--sampling-rate"
-      - "1.0"
-      - "--sampling-mode"
-      - "dynamic"
-      - "--selection"
-      - "random"
-      - "--rounds"
-      - "5"
-      - "--round"
-      - "{{inputs.parameters.round}}"
-      - "--epochs"
-      - "4"
-      - "--partitions"
-      - "1,2,3,10,22,24,25,26,28"
-      resources:
-        requests:
-          cpu: "2"
-          memory: "4Gi"
-        limits:
-          cpu: "4"
-          memory: "8Gi"
-      volumeMounts:
-      - name: app-volume
-        mountPath: /app
-      - name: experiments-volume
-        mountPath: /experiments
-      - name: checkpoints-volume
-        mountPath: /checkpoints
