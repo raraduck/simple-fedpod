@@ -13,7 +13,7 @@ spec:
   arguments:
     parameters:
     - name: image
-      value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.2"
+      value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.3"
     - name: job
       value: "stage2"
     - name: committee-job
