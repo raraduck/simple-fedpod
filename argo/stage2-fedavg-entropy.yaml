@@ -834,7 +834,6 @@ spec:
         - { partition: "1"  }
         - { partition: "2"  }
         - { partition: "3"  }
-        - { partition: "3"  }
         - { partition: "4"  }
         - { partition: "5"  }
         - { partition: "6"  }
@@ -845,7 +844,6 @@ spec:
         - { partition: "11" }
         - { partition: "12" }
         - { partition: "13" }
-        - { partition: "13" }
         - { partition: "14" }
         - { partition: "15" }
         - { partition: "16" }
@@ -855,7 +853,6 @@ spec:
         - { partition: "20" }
         - { partition: "21" }
         - { partition: "22" }
-        - { partition: "23" }
         - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
@@ -910,7 +907,6 @@ spec:
         - { partition: "1"  }
         - { partition: "2"  }
         - { partition: "3"  }
-        - { partition: "3"  }
         - { partition: "4"  }
         - { partition: "5"  }
         - { partition: "6"  }
@@ -921,7 +917,6 @@ spec:
         - { partition: "11" }
         - { partition: "12" }
         - { partition: "13" }
-        - { partition: "13" }
         - { partition: "14" }
         - { partition: "15" }
         - { partition: "16" }
@@ -931,7 +926,6 @@ spec:
         - { partition: "20" }
         - { partition: "21" }
         - { partition: "22" }
-        - { partition: "23" }
         - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
@@ -986,7 +980,6 @@ spec:
         - { partition: "1"  }
         - { partition: "2"  }
         - { partition: "3"  }
-        - { partition: "3"  }
         - { partition: "4"  }
         - { partition: "5"  }
         - { partition: "6"  }
@@ -997,7 +990,6 @@ spec:
         - { partition: "11" }
         - { partition: "12" }
         - { partition: "13" }
-        - { partition: "13" }
         - { partition: "14" }
         - { partition: "15" }
         - { partition: "16" }
@@ -1007,7 +999,6 @@ spec:
         - { partition: "20" }
         - { partition: "21" }
         - { partition: "22" }
-        - { partition: "23" }
         - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
@@ -1062,7 +1053,6 @@ spec:
         - { partition: "1"  }
         - { partition: "2"  }
         - { partition: "3"  }
-        - { partition: "3"  }
         - { partition: "4"  }
         - { partition: "5"  }
         - { partition: "6"  }
@@ -1073,7 +1063,6 @@ spec:
         - { partition: "11" }
         - { partition: "12" }
         - { partition: "13" }
-        - { partition: "13" }
         - { partition: "14" }
         - { partition: "15" }
         - { partition: "16" }
@@ -1083,7 +1072,6 @@ spec:
         - { partition: "20" }
         - { partition: "21" }
         - { partition: "22" }
-        - { partition: "23" }
         - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
