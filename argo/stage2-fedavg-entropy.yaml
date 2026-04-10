@@ -303,14 +303,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r04/agg.pt"
         withItems:
         - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "10" }
-        - { partition: "22" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
-        - { partition: "28" }
 
       - name: eval-r5
         template: eval-job
@@ -352,14 +347,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r05/agg.pt"
         withItems:
         - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "10" }
-        - { partition: "22" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
-        - { partition: "28" }
 
       - name: eval-r6
         template: eval-job
@@ -401,14 +391,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r06/agg.pt"
         withItems:
         - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "10" }
-        - { partition: "22" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
-        - { partition: "28" }
 
       - name: eval-r7
         template: eval-job
@@ -450,14 +435,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r07/agg.pt"
         withItems:
         - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "10" }
-        - { partition: "22" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
-        - { partition: "28" }
 
       - name: eval-r8
         template: eval-job
@@ -499,14 +479,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r08/agg.pt"
         withItems:
         - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "10" }
-        - { partition: "22" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
-        - { partition: "28" }
 
       - name: eval-r9
         template: eval-job
