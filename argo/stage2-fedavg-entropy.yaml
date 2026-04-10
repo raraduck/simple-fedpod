@@ -1,0 +1,1303 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: fedpod-stage2-
+  namespace: dwnkim
+spec:
+  entrypoint: stage2
+  serviceAccountName: default
+  podGC:
+    strategy: OnPodCompletion
+
+  # ── 공통 파라미터 ──────────────────────────────────────────────────────────
+  arguments:
+    parameters:
+    - name: image
+      value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.3"
+    - name: job
+      value: "stage2"
+    - name: committee-job
+      value: "stage1"
+    - name: committee-rounds
+      value: "5"
+    - name: committee-round
+      value: "4"
+    - name: committee-partitions
+      value: "1,2,3,10,22,24,25,26,28"
+    - name: data-path
+      value: "/data/fets128/trainval"
+    - name: ckpt-root
+      value: "/checkpoints"
+    - name: runs-root
+      value: "/runs"
+    - name: selection
+      value: "entropy"
+    - name: agg-sampling-mode
+      value: "dynamic"
+
+  volumes:
+  - name: app-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/scripts
+      readOnly: true
+  - name: data-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/data
+      readOnly: true
+  - name: experiments-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/experiments
+      readOnly: true
+  - name: checkpoints-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/checkpoints
+      readOnly: false
+  - name: runs-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/runs
+      readOnly: false
+  - name: dshm
+    emptyDir:
+      medium: Memory
+      sizeLimit: 8Gi
+
+  templates:
+
+  # ── DAG ───────────────────────────────────────────────────────────────────
+  # rounds=20, epochs=4, partitions=1,2,3,10,22,24,25,26,28
+  # ckpt 경로 형식: agg/R20r{rr}/agg.pt  (FL 규칙: 매 라운드 공유 집계 모델 사용)
+  # epoch offset:  r0=0, r1=4, r2=8, ..., r19=76
+  - name: stage2
+    dag:
+      tasks:
+
+      # dry-run: pool+entropy selection (committee = stage1 최종 지역모델)
+      - name: dry-run
+        template: dry-run-job
+
+      # Round 0: agg/init/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r0
+        template: train-job
+        dependencies: [dry-run]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
+          - name: round
+            value: "0"
+          - name: epoch
+            value: "0"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/agg.pt"
+        withItems:
+        - { partition: "1"  }
+
+      - name: eval-r0
+        template: eval-job
+        dependencies: [dry-run]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
+          - name: round
+            value: "0"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/agg.pt"
+
+      - name: agg-r0
+        template: agg-job
+        dependencies: [train-r0]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
+          - name: round
+            value: "0"
+
+      # Round 1: agg/R20r00/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r1
+        template: train-job
+        dependencies: [agg-r0]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r00/split.csv"
+          - name: round
+            value: "1"
+          - name: epoch
+            value: "4"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r00/agg.pt"
+        withItems:
+        - { partition: "1"  }
+
+      - name: eval-r1
+        template: eval-job
+        dependencies: [agg-r0]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r00/split.csv"
+          - name: round
+            value: "1"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r00/agg.pt"
+
+      - name: agg-r1
+        template: agg-job
+        dependencies: [train-r1]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r00/split.csv"
+          - name: round
+            value: "1"
+
+      # Round 2: agg/R20r01/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r2
+        template: train-job
+        dependencies: [agg-r1]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r01/split.csv"
+          - name: round
+            value: "2"
+          - name: epoch
+            value: "8"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r01/agg.pt"
+        withItems:
+        - { partition: "1"  }
+
+      - name: eval-r2
+        template: eval-job
+        dependencies: [agg-r1]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r01/split.csv"
+          - name: round
+            value: "2"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r01/agg.pt"
+
+      - name: agg-r2
+        template: agg-job
+        dependencies: [train-r2]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r01/split.csv"
+          - name: round
+            value: "2"
+
+      # Round 3: agg/R20r02/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r3
+        template: train-job
+        dependencies: [agg-r2]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r02/split.csv"
+          - name: round
+            value: "3"
+          - name: epoch
+            value: "12"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r02/agg.pt"
+        withItems:
+        - { partition: "1"  }
+
+      - name: eval-r3
+        template: eval-job
+        dependencies: [agg-r2]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r02/split.csv"
+          - name: round
+            value: "3"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r02/agg.pt"
+
+      - name: agg-r3
+        template: agg-job
+        dependencies: [train-r3]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r02/split.csv"
+          - name: round
+            value: "3"
+
+      # Round 4: agg/R20r03/agg.pt 에서 시작 (FL 규칙)
+      - name: train-r4
+        template: train-job
+        dependencies: [agg-r3]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r03/split.csv"
+          - name: round
+            value: "4"
+          - name: epoch
+            value: "16"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r03/agg.pt"
+        withItems:
+        - { partition: "1"  }
+
+      - name: eval-r4
+        template: eval-job
+        dependencies: [agg-r3]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r03/split.csv"
+          - name: round
+            value: "4"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r03/agg.pt"
+
+      - name: agg-r4
+        template: agg-job
+        dependencies: [train-r4]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r03/split.csv"
+          - name: round
+            value: "4"
+
+      # Round 5: agg/R20r04/agg.pt 에서 시작
+      - name: train-r5
+        template: train-job
+        dependencies: [agg-r4]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r04/split.csv"
+          - name: round
+            value: "5"
+          - name: epoch
+            value: "20"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r04/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r5
+        template: eval-job
+        dependencies: [agg-r4]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r04/split.csv"
+          - name: round
+            value: "5"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r04/agg.pt"
+
+      - name: agg-r5
+        template: agg-job
+        dependencies: [train-r5]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r04/split.csv"
+          - name: round
+            value: "5"
+
+      # Round 6: agg/R20r05/agg.pt 에서 시작
+      - name: train-r6
+        template: train-job
+        dependencies: [agg-r5]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r05/split.csv"
+          - name: round
+            value: "6"
+          - name: epoch
+            value: "24"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r05/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r6
+        template: eval-job
+        dependencies: [agg-r5]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r05/split.csv"
+          - name: round
+            value: "6"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r05/agg.pt"
+
+      - name: agg-r6
+        template: agg-job
+        dependencies: [train-r6]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r05/split.csv"
+          - name: round
+            value: "6"
+
+      # Round 7: agg/R20r06/agg.pt 에서 시작
+      - name: train-r7
+        template: train-job
+        dependencies: [agg-r6]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r06/split.csv"
+          - name: round
+            value: "7"
+          - name: epoch
+            value: "28"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r06/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r7
+        template: eval-job
+        dependencies: [agg-r6]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r06/split.csv"
+          - name: round
+            value: "7"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r06/agg.pt"
+
+      - name: agg-r7
+        template: agg-job
+        dependencies: [train-r7]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r06/split.csv"
+          - name: round
+            value: "7"
+
+      # Round 8: agg/R20r07/agg.pt 에서 시작
+      - name: train-r8
+        template: train-job
+        dependencies: [agg-r7]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r07/split.csv"
+          - name: round
+            value: "8"
+          - name: epoch
+            value: "32"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r07/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r8
+        template: eval-job
+        dependencies: [agg-r7]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r07/split.csv"
+          - name: round
+            value: "8"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r07/agg.pt"
+
+      - name: agg-r8
+        template: agg-job
+        dependencies: [train-r8]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r07/split.csv"
+          - name: round
+            value: "8"
+
+      # Round 9: agg/R20r08/agg.pt 에서 시작
+      - name: train-r9
+        template: train-job
+        dependencies: [agg-r8]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r08/split.csv"
+          - name: round
+            value: "9"
+          - name: epoch
+            value: "36"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r08/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r9
+        template: eval-job
+        dependencies: [agg-r8]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r08/split.csv"
+          - name: round
+            value: "9"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r08/agg.pt"
+
+      - name: agg-r9
+        template: agg-job
+        dependencies: [train-r9]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r08/split.csv"
+          - name: round
+            value: "9"
+
+      # Round 10: agg/R20r09/agg.pt 에서 시작
+      - name: train-r10
+        template: train-job
+        dependencies: [agg-r9]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r09/split.csv"
+          - name: round
+            value: "10"
+          - name: epoch
+            value: "40"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r09/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r10
+        template: eval-job
+        dependencies: [agg-r9]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r09/split.csv"
+          - name: round
+            value: "10"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r09/agg.pt"
+
+      - name: agg-r10
+        template: agg-job
+        dependencies: [train-r10]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r09/split.csv"
+          - name: round
+            value: "10"
+
+      # Round 11: agg/R20r10/agg.pt 에서 시작
+      - name: train-r11
+        template: train-job
+        dependencies: [agg-r10]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r10/split.csv"
+          - name: round
+            value: "11"
+          - name: epoch
+            value: "44"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r10/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r11
+        template: eval-job
+        dependencies: [agg-r10]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r10/split.csv"
+          - name: round
+            value: "11"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r10/agg.pt"
+
+      - name: agg-r11
+        template: agg-job
+        dependencies: [train-r11]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r10/split.csv"
+          - name: round
+            value: "11"
+
+      # Round 12: agg/R20r11/agg.pt 에서 시작
+      - name: train-r12
+        template: train-job
+        dependencies: [agg-r11]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r11/split.csv"
+          - name: round
+            value: "12"
+          - name: epoch
+            value: "48"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r11/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r12
+        template: eval-job
+        dependencies: [agg-r11]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r11/split.csv"
+          - name: round
+            value: "12"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r11/agg.pt"
+
+      - name: agg-r12
+        template: agg-job
+        dependencies: [train-r12]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r11/split.csv"
+          - name: round
+            value: "12"
+
+      # Round 13: agg/R20r12/agg.pt 에서 시작
+      - name: train-r13
+        template: train-job
+        dependencies: [agg-r12]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r12/split.csv"
+          - name: round
+            value: "13"
+          - name: epoch
+            value: "52"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r12/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r13
+        template: eval-job
+        dependencies: [agg-r12]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r12/split.csv"
+          - name: round
+            value: "13"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r12/agg.pt"
+
+      - name: agg-r13
+        template: agg-job
+        dependencies: [train-r13]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r12/split.csv"
+          - name: round
+            value: "13"
+
+      # Round 14: agg/R20r13/agg.pt 에서 시작
+      - name: train-r14
+        template: train-job
+        dependencies: [agg-r13]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r13/split.csv"
+          - name: round
+            value: "14"
+          - name: epoch
+            value: "56"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r13/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r14
+        template: eval-job
+        dependencies: [agg-r13]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r13/split.csv"
+          - name: round
+            value: "14"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r13/agg.pt"
+
+      - name: agg-r14
+        template: agg-job
+        dependencies: [train-r14]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r13/split.csv"
+          - name: round
+            value: "14"
+
+      # Round 15: agg/R20r14/agg.pt 에서 시작
+      - name: train-r15
+        template: train-job
+        dependencies: [agg-r14]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r14/split.csv"
+          - name: round
+            value: "15"
+          - name: epoch
+            value: "60"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r14/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r15
+        template: eval-job
+        dependencies: [agg-r14]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r14/split.csv"
+          - name: round
+            value: "15"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r14/agg.pt"
+
+      - name: agg-r15
+        template: agg-job
+        dependencies: [train-r15]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r14/split.csv"
+          - name: round
+            value: "15"
+
+      # Round 16: agg/R20r15/agg.pt 에서 시작
+      - name: train-r16
+        template: train-job
+        dependencies: [agg-r15]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r15/split.csv"
+          - name: round
+            value: "16"
+          - name: epoch
+            value: "64"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r15/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r16
+        template: eval-job
+        dependencies: [agg-r15]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r15/split.csv"
+          - name: round
+            value: "16"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r15/agg.pt"
+
+      - name: agg-r16
+        template: agg-job
+        dependencies: [train-r16]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r15/split.csv"
+          - name: round
+            value: "16"
+
+      # Round 17: agg/R20r16/agg.pt 에서 시작
+      - name: train-r17
+        template: train-job
+        dependencies: [agg-r16]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r16/split.csv"
+          - name: round
+            value: "17"
+          - name: epoch
+            value: "68"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r16/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r17
+        template: eval-job
+        dependencies: [agg-r16]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r16/split.csv"
+          - name: round
+            value: "17"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r16/agg.pt"
+
+      - name: agg-r17
+        template: agg-job
+        dependencies: [train-r17]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r16/split.csv"
+          - name: round
+            value: "17"
+
+      # Round 18: agg/R20r17/agg.pt 에서 시작
+      - name: train-r18
+        template: train-job
+        dependencies: [agg-r17]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r17/split.csv"
+          - name: round
+            value: "18"
+          - name: epoch
+            value: "72"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r17/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r18
+        template: eval-job
+        dependencies: [agg-r17]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r17/split.csv"
+          - name: round
+            value: "18"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r17/agg.pt"
+
+      - name: agg-r18
+        template: agg-job
+        dependencies: [train-r18]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r17/split.csv"
+          - name: round
+            value: "18"
+
+      # Round 19: agg/R20r18/agg.pt 에서 시작
+      - name: train-r19
+        template: train-job
+        dependencies: [agg-r18]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r18/split.csv"
+          - name: round
+            value: "19"
+          - name: epoch
+            value: "76"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r18/agg.pt"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "10" }
+        - { partition: "22" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "28" }
+
+      - name: eval-r19
+        template: eval-job
+        dependencies: [agg-r18]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r18/split.csv"
+          - name: round
+            value: "19"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r18/agg.pt"
+
+      - name: agg-r19
+        template: agg-job
+        dependencies: [train-r19]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r18/split.csv"
+          - name: round
+            value: "19"
+
+  # ── Dry-run Job (pool+entropy, GPU 필요) ──────────────────────────────────
+  - name: dry-run-job
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "agg.py"]
+      args:
+      - "--dry-run"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "-c"
+      - "/experiments/fets/partition2/fets_split.csv"
+      - "--sampling-rate"
+      - "1.0"
+      - "--sampling-mode"
+      - "pool"
+      - "--selection"
+      - "{{workflow.parameters.selection}}"
+      - "--in-ch"
+      - "5"
+      - "--out-classes"
+      - "3"
+      - "--committee-job"
+      - "{{workflow.parameters.committee-job}}"
+      - "--committee-rounds"
+      - "{{workflow.parameters.committee-rounds}}"
+      - "--committee-round"
+      - "{{workflow.parameters.committee-round}}"
+      - "--committee-partitions"
+      - "{{workflow.parameters.committee-partitions}}"
+      - "--committee-in-ch"
+      - "4"
+      - "--committee-out-classes"
+      - "1"
+      - "--committee-chan"
+      - "[t1,t1ce,t2,flair]"
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "--gpu"
+      - "1"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+
+  # ── Eval Job (generalization — agg.pt 를 모든 기관 val 에 평가) ──────────
+  - name: eval-job
+    inputs:
+      parameters:
+      - name: split-csv
+      - name: round
+      - name: init-ckpt
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "gen_eval.py"]
+      args:
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--rounds"
+      - "20"
+      - "--epochs"
+      - "4"
+      - "--init-ckpt"
+      - "{{inputs.parameters.init-ckpt}}"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
+      - "-C"
+      - "[t1,t1ce,t2,flair,seg]"
+      - "-G"
+      - "[[1,2,4],[1,4],[4]]"
+      - "-N"
+      - "[wt,tc,et]"
+      - "-I"
+      - "[1,2,3]"
+      - "--gpu"
+      - "1"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "32Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs
+      - name: dshm
+        mountPath: /dev/shm
+
+  # ── Train Job (모든 라운드 — FL 규칙: agg.pt 에서 시작) ───────────────────
+  - name: train-job
+    inputs:
+      parameters:
+      - name: partition
+      - name: split-csv
+      - name: round
+      - name: epoch
+      - name: init-ckpt
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      args:
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "-P"
+      - "{{inputs.parameters.partition}}"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "--rounds"
+      - "20"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--epochs"
+      - "4"
+      - "--epoch"
+      - "{{inputs.parameters.epoch}}"
+      - "--init-ckpt"
+      - "{{inputs.parameters.init-ckpt}}"
+      - "-C"
+      - "[t1,t1ce,t2,flair,seg]"
+      - "-G"
+      - "[[1,2,4],[1,4],[4]]"
+      - "-N"
+      - "[wt,tc,et]"
+      - "-I"
+      - "[1,2,3]"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs
+      - name: dshm
+        mountPath: /dev/shm
+
+  # ── Agg Job (FedAvg — agg.pt + split CSV 생성) ────────────────────────────
+  - name: agg-job
+    inputs:
+      parameters:
+      - name: split-csv
+      - name: round
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "agg.py"]
+      args:
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "--sampling-rate"
+      - "1.0"
+      - "--sampling-mode"
+      - "{{workflow.parameters.agg-sampling-mode}}"
+      - "--rounds"
+      - "20"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--epochs"
+      - "4"
+      - "--partitions"
+      - "1,2,3,10,22,24,25,26,28"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs
