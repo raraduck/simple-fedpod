@@ -33,7 +33,7 @@ spec:
     - name: selection
       value: "entropy"
     - name: agg-sampling-mode
-      value: "dynamic"
+      value: "static"
 
   volumes:
   - name: app-volume
