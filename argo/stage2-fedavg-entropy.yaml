@@ -98,6 +98,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/agg.pt"
         withItems:
         - { partition: "1"  }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
 
       - name: eval-r0
         template: eval-job
@@ -139,6 +142,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r00/agg.pt"
         withItems:
         - { partition: "1"  }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
 
       - name: eval-r1
         template: eval-job
@@ -180,6 +186,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r01/agg.pt"
         withItems:
         - { partition: "1"  }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
 
       - name: eval-r2
         template: eval-job
@@ -221,6 +230,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r02/agg.pt"
         withItems:
         - { partition: "1"  }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
 
       - name: eval-r3
         template: eval-job
@@ -262,6 +274,9 @@ spec:
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/R20r03/agg.pt"
         withItems:
         - { partition: "1"  }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
 
       - name: eval-r4
         template: eval-job
