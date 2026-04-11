@@ -41,15 +41,19 @@ class App:
         log.info("DataLoader — train: %d batches, val: %d batches (batch_size=%d)",
                  len(train_loader), len(val_loader), self.args.batch)
 
-        images, labels = next(iter(train_loader))
-        log.info("Batch sample —")
-        log.info("  images : %s  dtype=%s", tuple(images.shape), images.dtype)
-        log.info("  labels : %s  dtype=%s", tuple(labels.shape), labels.dtype)
-        for i, name in enumerate(lnam):
-            pos = int(labels[:, i].sum().item())
-            total = int(labels[:, i].numel())
-            log.info("  label[%d] %-4s — foreground: %d / %d voxels (%.1f%%)",
-                     i, name, pos, total, 100 * pos / total)
+        if train_subjects:
+            images, labels = next(iter(train_loader))
+            log.info("Batch sample —")
+            log.info("  images : %s  dtype=%s", tuple(images.shape), images.dtype)
+            log.info("  labels : %s  dtype=%s", tuple(labels.shape), labels.dtype)
+            for i, name in enumerate(lnam):
+                pos = int(labels[:, i].sum().item())
+                total = int(labels[:, i].numel())
+                log.info("  label[%d] %-4s — foreground: %d / %d voxels (%.1f%%)",
+                         i, name, pos, total, 100 * pos / total)
+        else:
+            log.warning("Partition %d round %d — no training subjects sampled. Prv-val only.",
+                        self.args.partition, self.args.round)
 
         # Model
         device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
@@ -72,15 +76,17 @@ class App:
             model.load_state_dict(ckpt["model"])
             log.info("Loaded init model ← %s  (round=%s)", self.args.init_ckpt, ckpt.get("round"))
 
-        with torch.no_grad():
-            dummy = images[:1].to(device)
-            out = model(dummy)
-        log.info("Forward pass — input: %s  output: %s", tuple(dummy.shape), tuple(out.shape))
+        if train_subjects:
+            with torch.no_grad():
+                dummy = images[:1].to(device)
+                out = model(dummy)
+            log.info("Forward pass — input: %s  output: %s", tuple(dummy.shape), tuple(out.shape))
 
         # Training
         ckpt_dir = os.path.join(self.args.ckpt_root, self.args.job,
                                 f"inst{self.args.partition:02d}",
                                 f"R{self.args.rounds:02d}r{self.args.round:02d}")
+        os.makedirs(ckpt_dir, exist_ok=True)
         log.info("Round %d / %d  ckpt_dir=%s", self.args.round, self.args.rounds, ckpt_dir)
         trainer = Trainer(model, train_loader, val_loader,
                           lr=self.args.lr, device=device, ckpt_dir=ckpt_dir,
@@ -88,6 +94,42 @@ class App:
 
         prv_val  = trainer.eval()
         prv_dice = trainer.eval_dice()
+
+        # ── 학습 데이터 없음: prv-val 기록 후 종료 ──────────────────────────
+        if not train_subjects:
+            prv_dice_avg = sum(prv_dice.values()) / len(prv_dice) if prv_dice else 0.0
+            metrics = {
+                "partition":    self.args.partition,
+                "round":        self.args.round,
+                "n_train":      0,
+                "prv_val_loss": round(prv_val,      6),
+                "prv_dice":     {k: round(v, 6) for k, v in prv_dice.items()},
+                "prv_dice_avg": round(prv_dice_avg, 6),
+            }
+            with open(os.path.join(ckpt_dir, "metrics.json"), "w") as f:
+                json.dump(metrics, f, indent=2)
+            runs_dir    = os.path.join(self.args.runs_root, self.args.job,
+                                       f"inst{self.args.partition:02d}")
+            epoch_start = self.args.epoch
+            r           = self.args.round
+            with SummaryWriter(runs_dir) as writer:
+                writer.add_scalar("rnd_val_loss_prv/avg",    prv_val,      r)
+                writer.add_scalar("rnd_val_loss_prvpst/avg", prv_val,      r)
+                writer.add_scalar("rnd_val_dice_prv/avg",    prv_dice_avg, r)
+                writer.add_scalar("rnd_val_dice_prvpst/avg", prv_dice_avg, r)
+                for name in lnam:
+                    writer.add_scalar(f"rnd_val_dice_prv/{name}",    prv_dice[name], r)
+                    writer.add_scalar(f"rnd_val_dice_prvpst/{name}", prv_dice[name], r)
+                writer.add_scalar("ech_val_loss_prv/avg",    prv_val,      epoch_start)
+                writer.add_scalar("ech_val_loss_prvpst/avg", prv_val,      epoch_start)
+                writer.add_scalar("ech_val_dice_prv/avg",    prv_dice_avg, epoch_start)
+                writer.add_scalar("ech_val_dice_prvpst/avg", prv_dice_avg, epoch_start)
+                for name in lnam:
+                    writer.add_scalar(f"ech_val_dice_prv/{name}",    prv_dice[name], epoch_start)
+                    writer.add_scalar(f"ech_val_dice_prvpst/{name}", prv_dice[name], epoch_start)
+            log.info("Empty-train exit — partition=%d  prv_loss=%.4f  prv_dice_avg=%.4f",
+                     self.args.partition, prv_val, prv_dice_avg)
+            return
 
         trn_losses, val_losses = [], []
         for epoch in range(trainer.start_epoch, self.args.epoch + self.args.epochs + 1):

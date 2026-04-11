@@ -27,6 +27,8 @@ class Aggregator:
         if self.args.dry_run:
             self._init_model()
             self._init_split()
+            self._write_output("next-round", "0")
+            self._write_output("next-epoch",  "0")
             return
 
         if self.args.sampling_mode == "pool":
@@ -47,7 +49,7 @@ class Aggregator:
                                      f"R{self.args.rounds:02d}r{self.args.round:02d}",
                                      "best.pt")
             if not os.path.exists(ckpt_path):
-                log.warning("  partition %2d — checkpoint not found: %s", p, ckpt_path)
+                log.warning("  partition %2d — checkpoint not found (no training data?): %s", p, ckpt_path)
                 continue
             ckpt = torch.load(ckpt_path, map_location="cpu")
             state_dicts.append(ckpt["model"])
@@ -100,6 +102,15 @@ class Aggregator:
 
         if not metrics_list:
             log.warning("inst_avg — no metrics.json found, skipping TensorBoard")
+            return
+
+        # n_train=0 (학습 데이터 없는 기관) 은 평균 계산에서 제외
+        n_skip = sum(1 for m in metrics_list if m.get("n_train", 0) == 0)
+        if n_skip:
+            log.warning("inst_avg — %d partition(s) with n_train=0 excluded from average", n_skip)
+        metrics_list = [m for m in metrics_list if m.get("n_train", 0) > 0]
+        if not metrics_list:
+            log.warning("inst_avg — all partitions had no training data, skipping TensorBoard")
             return
 
         def _mean(key):
