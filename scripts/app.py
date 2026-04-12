@@ -27,6 +27,12 @@ class App:
 
         train_subjects, val_subjects = load_split(self.args.split, self.args.partition, self.args.round)
 
+        # ── 학습 데이터 없음: 즉시 종료 (gen_eval 이 전체 val 평가를 대체) ──
+        if not train_subjects:
+            log.warning("Empty-train exit — partition=%d round=%d, skipped (no training subjects).",
+                        self.args.partition, self.args.round)
+            return
+
         channels = self.args.chan.strip("[]").split(",")
         lgrp = [list(map(int, g.strip("[]").split(","))) for g in self.args.lgrp.strip("[]").split("],[")]
         lnam = self.args.lnam.strip("[]").split(",")
@@ -41,19 +47,15 @@ class App:
         log.info("DataLoader — train: %d batches, val: %d batches (batch_size=%d)",
                  len(train_loader), len(val_loader), self.args.batch)
 
-        if train_subjects:
-            images, labels = next(iter(train_loader))
-            log.info("Batch sample —")
-            log.info("  images : %s  dtype=%s", tuple(images.shape), images.dtype)
-            log.info("  labels : %s  dtype=%s", tuple(labels.shape), labels.dtype)
-            for i, name in enumerate(lnam):
-                pos = int(labels[:, i].sum().item())
-                total = int(labels[:, i].numel())
-                log.info("  label[%d] %-4s — foreground: %d / %d voxels (%.1f%%)",
-                         i, name, pos, total, 100 * pos / total)
-        else:
-            log.warning("Partition %d round %d — no training subjects sampled. Prv-val only.",
-                        self.args.partition, self.args.round)
+        images, labels = next(iter(train_loader))
+        log.info("Batch sample —")
+        log.info("  images : %s  dtype=%s", tuple(images.shape), images.dtype)
+        log.info("  labels : %s  dtype=%s", tuple(labels.shape), labels.dtype)
+        for i, name in enumerate(lnam):
+            pos = int(labels[:, i].sum().item())
+            total = int(labels[:, i].numel())
+            log.info("  label[%d] %-4s — foreground: %d / %d voxels (%.1f%%)",
+                     i, name, pos, total, 100 * pos / total)
 
         # Model
         device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
