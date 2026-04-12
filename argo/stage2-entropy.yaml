@@ -41,6 +41,14 @@ spec:
       value: "fedavg"
     - name: sampling-rate
       value: "1.0"
+    - name: reuse-pool
+      value: ""
+    - name: pid-kp
+      value: "1.0"
+    - name: pid-ki
+      value: "0.1"
+    - name: pid-kd
+      value: "0.0"
 
   volumes:
   - name: app-volume
@@ -1597,6 +1605,8 @@ spec:
       - "5"
       - "--out-classes"
       - "3"
+      - "--reuse-pool"
+      - "{{workflow.parameters.reuse-pool}}"
       - "--committee-job"
       - "{{workflow.parameters.committee-job}}"
       - "--committee-rounds"
@@ -1840,6 +1850,12 @@ spec:
       - "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33"
       - "--algorithm"
       - "{{workflow.parameters.algorithm}}"
+      - "--pid-kp"
+      - "{{workflow.parameters.pid-kp}}"
+      - "--pid-ki"
+      - "{{workflow.parameters.pid-ki}}"
+      - "--pid-kd"
+      - "{{workflow.parameters.pid-kd}}"
       - "--runs-root"
       - "{{workflow.parameters.runs-root}}"
       resources:

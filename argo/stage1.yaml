@@ -1,10 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
-  generateName: fedpod-stage1-test-
+  generateName: fedpod-stage1-
   namespace: dwnkim
 spec:
-  entrypoint: stage1-test
+  entrypoint: stage1
   serviceAccountName: default
   podGC:
     strategy: OnPodCompletion
@@ -16,6 +16,10 @@ spec:
       value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.3"
     - name: job
       value: "stage1"
+    - name: epochs
+      value: "4"
+    - name: rounds
+      value: "5"
     - name: data-path
       value: "/data/fets128/trainval"
     - name: ckpt-root
@@ -57,10 +61,11 @@ spec:
   templates:
 
   # ── DAG ───────────────────────────────────────────────────────────────────
-  # rounds=5, epochs=4, partitions=1,2,3,10,22,24,25,26,28
-  # ckpt 경로 형식: inst{PP}/R05r{rr}/best.pt
-  # epoch offset:  r0=0, r1=4, r2=8, r3=12, r4=16
-  - name: stage1-test
+  # rounds=5, epochs=4, partitions=1..33
+  # stage1 FL 규칙: 각 기관이 자신의 이전 라운드 best.pt 에서 이어서 학습
+  # (글로벌 agg.pt 미사용 — committee 모델 생성 목적)
+  # epoch offset: r0=0, r1=4, r2=8, r3=12, r4=16
+  - name: stage1
     dag:
       tasks:
 
@@ -68,7 +73,7 @@ spec:
       - name: dry-run
         template: dry-run-job
 
-      # Round 0: random init, init-ckpt 없음
+      # ── Round 0 ───────────────────────────────────────────────────────────
       - name: train-r0
         template: train-job-r0
         dependencies: [dry-run]
@@ -80,12 +85,36 @@ spec:
         - { partition: "1"  }
         - { partition: "2"  }
         - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
         - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
         - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
         - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: agg-r0
         template: agg-job
@@ -97,7 +126,7 @@ spec:
           - name: round
             value: "0"
 
-      # Round 1: 각 기관 자신의 R05r00/best.pt 에서 이어서 학습
+      # ── Round 1 ───────────────────────────────────────────────────────────
       - name: train-r1
         template: train-job
         dependencies: [agg-r0]
@@ -112,17 +141,41 @@ spec:
           - name: epoch
             value: "4"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r00/best.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r00/best.pt"
         withItems:
-        - { partition: "1",  inst: "inst01" }
-        - { partition: "2",  inst: "inst02" }
-        - { partition: "3",  inst: "inst03" }
-        - { partition: "10", inst: "inst10" }
-        - { partition: "22", inst: "inst22" }
-        - { partition: "24", inst: "inst24" }
-        - { partition: "25", inst: "inst25" }
-        - { partition: "26", inst: "inst26" }
-        - { partition: "28", inst: "inst28" }
+        - { partition: "1",  inst: "01" }
+        - { partition: "2",  inst: "02" }
+        - { partition: "3",  inst: "03" }
+        - { partition: "4",  inst: "04" }
+        - { partition: "5",  inst: "05" }
+        - { partition: "6",  inst: "06" }
+        - { partition: "7",  inst: "07" }
+        - { partition: "8",  inst: "08" }
+        - { partition: "9",  inst: "09" }
+        - { partition: "10", inst: "10" }
+        - { partition: "11", inst: "11" }
+        - { partition: "12", inst: "12" }
+        - { partition: "13", inst: "13" }
+        - { partition: "14", inst: "14" }
+        - { partition: "15", inst: "15" }
+        - { partition: "16", inst: "16" }
+        - { partition: "17", inst: "17" }
+        - { partition: "18", inst: "18" }
+        - { partition: "19", inst: "19" }
+        - { partition: "20", inst: "20" }
+        - { partition: "21", inst: "21" }
+        - { partition: "22", inst: "22" }
+        - { partition: "23", inst: "23" }
+        - { partition: "24", inst: "24" }
+        - { partition: "25", inst: "25" }
+        - { partition: "26", inst: "26" }
+        - { partition: "27", inst: "27" }
+        - { partition: "28", inst: "28" }
+        - { partition: "29", inst: "29" }
+        - { partition: "30", inst: "30" }
+        - { partition: "31", inst: "31" }
+        - { partition: "32", inst: "32" }
+        - { partition: "33", inst: "33" }
 
       - name: agg-r1
         template: agg-job
@@ -134,7 +187,7 @@ spec:
           - name: round
             value: "1"
 
-      # Round 2: 각 기관 자신의 R05r01/best.pt 에서 이어서 학습
+      # ── Round 2 ───────────────────────────────────────────────────────────
       - name: train-r2
         template: train-job
         dependencies: [agg-r1]
@@ -149,17 +202,41 @@ spec:
           - name: epoch
             value: "8"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r01/best.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r01/best.pt"
         withItems:
-        - { partition: "1",  inst: "inst01" }
-        - { partition: "2",  inst: "inst02" }
-        - { partition: "3",  inst: "inst03" }
-        - { partition: "10", inst: "inst10" }
-        - { partition: "22", inst: "inst22" }
-        - { partition: "24", inst: "inst24" }
-        - { partition: "25", inst: "inst25" }
-        - { partition: "26", inst: "inst26" }
-        - { partition: "28", inst: "inst28" }
+        - { partition: "1",  inst: "01" }
+        - { partition: "2",  inst: "02" }
+        - { partition: "3",  inst: "03" }
+        - { partition: "4",  inst: "04" }
+        - { partition: "5",  inst: "05" }
+        - { partition: "6",  inst: "06" }
+        - { partition: "7",  inst: "07" }
+        - { partition: "8",  inst: "08" }
+        - { partition: "9",  inst: "09" }
+        - { partition: "10", inst: "10" }
+        - { partition: "11", inst: "11" }
+        - { partition: "12", inst: "12" }
+        - { partition: "13", inst: "13" }
+        - { partition: "14", inst: "14" }
+        - { partition: "15", inst: "15" }
+        - { partition: "16", inst: "16" }
+        - { partition: "17", inst: "17" }
+        - { partition: "18", inst: "18" }
+        - { partition: "19", inst: "19" }
+        - { partition: "20", inst: "20" }
+        - { partition: "21", inst: "21" }
+        - { partition: "22", inst: "22" }
+        - { partition: "23", inst: "23" }
+        - { partition: "24", inst: "24" }
+        - { partition: "25", inst: "25" }
+        - { partition: "26", inst: "26" }
+        - { partition: "27", inst: "27" }
+        - { partition: "28", inst: "28" }
+        - { partition: "29", inst: "29" }
+        - { partition: "30", inst: "30" }
+        - { partition: "31", inst: "31" }
+        - { partition: "32", inst: "32" }
+        - { partition: "33", inst: "33" }
 
       - name: agg-r2
         template: agg-job
@@ -171,7 +248,7 @@ spec:
           - name: round
             value: "2"
 
-      # Round 3: 각 기관 자신의 R05r02/best.pt 에서 이어서 학습
+      # ── Round 3 ───────────────────────────────────────────────────────────
       - name: train-r3
         template: train-job
         dependencies: [agg-r2]
@@ -186,17 +263,41 @@ spec:
           - name: epoch
             value: "12"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r02/best.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r02/best.pt"
         withItems:
-        - { partition: "1",  inst: "inst01" }
-        - { partition: "2",  inst: "inst02" }
-        - { partition: "3",  inst: "inst03" }
-        - { partition: "10", inst: "inst10" }
-        - { partition: "22", inst: "inst22" }
-        - { partition: "24", inst: "inst24" }
-        - { partition: "25", inst: "inst25" }
-        - { partition: "26", inst: "inst26" }
-        - { partition: "28", inst: "inst28" }
+        - { partition: "1",  inst: "01" }
+        - { partition: "2",  inst: "02" }
+        - { partition: "3",  inst: "03" }
+        - { partition: "4",  inst: "04" }
+        - { partition: "5",  inst: "05" }
+        - { partition: "6",  inst: "06" }
+        - { partition: "7",  inst: "07" }
+        - { partition: "8",  inst: "08" }
+        - { partition: "9",  inst: "09" }
+        - { partition: "10", inst: "10" }
+        - { partition: "11", inst: "11" }
+        - { partition: "12", inst: "12" }
+        - { partition: "13", inst: "13" }
+        - { partition: "14", inst: "14" }
+        - { partition: "15", inst: "15" }
+        - { partition: "16", inst: "16" }
+        - { partition: "17", inst: "17" }
+        - { partition: "18", inst: "18" }
+        - { partition: "19", inst: "19" }
+        - { partition: "20", inst: "20" }
+        - { partition: "21", inst: "21" }
+        - { partition: "22", inst: "22" }
+        - { partition: "23", inst: "23" }
+        - { partition: "24", inst: "24" }
+        - { partition: "25", inst: "25" }
+        - { partition: "26", inst: "26" }
+        - { partition: "27", inst: "27" }
+        - { partition: "28", inst: "28" }
+        - { partition: "29", inst: "29" }
+        - { partition: "30", inst: "30" }
+        - { partition: "31", inst: "31" }
+        - { partition: "32", inst: "32" }
+        - { partition: "33", inst: "33" }
 
       - name: agg-r3
         template: agg-job
@@ -208,7 +309,7 @@ spec:
           - name: round
             value: "3"
 
-      # Round 4: 각 기관 자신의 R05r03/best.pt 에서 이어서 학습
+      # ── Round 4 ───────────────────────────────────────────────────────────
       - name: train-r4
         template: train-job
         dependencies: [agg-r3]
@@ -223,17 +324,41 @@ spec:
           - name: epoch
             value: "16"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/{{item.inst}}/R05r03/best.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r03/best.pt"
         withItems:
-        - { partition: "1",  inst: "inst01" }
-        - { partition: "2",  inst: "inst02" }
-        - { partition: "3",  inst: "inst03" }
-        - { partition: "10", inst: "inst10" }
-        - { partition: "22", inst: "inst22" }
-        - { partition: "24", inst: "inst24" }
-        - { partition: "25", inst: "inst25" }
-        - { partition: "26", inst: "inst26" }
-        - { partition: "28", inst: "inst28" }
+        - { partition: "1",  inst: "01" }
+        - { partition: "2",  inst: "02" }
+        - { partition: "3",  inst: "03" }
+        - { partition: "4",  inst: "04" }
+        - { partition: "5",  inst: "05" }
+        - { partition: "6",  inst: "06" }
+        - { partition: "7",  inst: "07" }
+        - { partition: "8",  inst: "08" }
+        - { partition: "9",  inst: "09" }
+        - { partition: "10", inst: "10" }
+        - { partition: "11", inst: "11" }
+        - { partition: "12", inst: "12" }
+        - { partition: "13", inst: "13" }
+        - { partition: "14", inst: "14" }
+        - { partition: "15", inst: "15" }
+        - { partition: "16", inst: "16" }
+        - { partition: "17", inst: "17" }
+        - { partition: "18", inst: "18" }
+        - { partition: "19", inst: "19" }
+        - { partition: "20", inst: "20" }
+        - { partition: "21", inst: "21" }
+        - { partition: "22", inst: "22" }
+        - { partition: "23", inst: "23" }
+        - { partition: "24", inst: "24" }
+        - { partition: "25", inst: "25" }
+        - { partition: "26", inst: "26" }
+        - { partition: "27", inst: "27" }
+        - { partition: "28", inst: "28" }
+        - { partition: "29", inst: "29" }
+        - { partition: "30", inst: "30" }
+        - { partition: "31", inst: "31" }
+        - { partition: "32", inst: "32" }
+        - { partition: "33", inst: "33" }
 
       - name: agg-r4
         template: agg-job
@@ -250,8 +375,16 @@ spec:
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       command: ["python3", "agg.py"]
@@ -284,7 +417,7 @@ spec:
       - name: checkpoints-volume
         mountPath: /checkpoints
 
-  # ── Train Job — Round 0 (init-ckpt 없음) ─────────────────────────────────
+  # ── Train Job — Round 0 (random init, init-ckpt 없음) ────────────────────
   - name: train-job-r0
     inputs:
       parameters:
@@ -292,8 +425,16 @@ spec:
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       args:
@@ -308,11 +449,11 @@ spec:
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "--rounds"
-      - "5"
+      - "{{workflow.parameters.rounds}}"
       - "--round"
       - "0"
       - "--epochs"
-      - "4"
+      - "{{workflow.parameters.epochs}}"
       - "--epoch"
       - "0"
       - "--runs-root"
@@ -340,7 +481,7 @@ spec:
       - name: dshm
         mountPath: /dev/shm
 
-  # ── Train Job — Round 1+ (init-ckpt = 이전 라운드 inst best.pt) ───────────
+  # ── Train Job — Round 1+ (init-ckpt = 이전 라운드 로컬 best.pt) ──────────
   - name: train-job
     inputs:
       parameters:
@@ -352,8 +493,16 @@ spec:
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       args:
@@ -368,11 +517,11 @@ spec:
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "--rounds"
-      - "5"
+      - "{{workflow.parameters.rounds}}"
       - "--round"
       - "{{inputs.parameters.round}}"
       - "--epochs"
-      - "4"
+      - "{{workflow.parameters.epochs}}"
       - "--epoch"
       - "{{inputs.parameters.epoch}}"
       - "--init-ckpt"
@@ -402,7 +551,7 @@ spec:
       - name: dshm
         mountPath: /dev/shm
 
-  # ── Agg Job (split CSV 갱신, agg.pt 미사용) ───────────────────────────────
+  # ── Agg Job (split CSV 갱신 + inst_avg TensorBoard, agg.pt 미사용) ────────
   - name: agg-job
     inputs:
       parameters:
@@ -411,8 +560,16 @@ spec:
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
-    nodeSelector:
-      nvidia.com/gpu.model: rtx4090
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       command: ["python3", "agg.py"]
@@ -430,13 +587,13 @@ spec:
       - "--selection"
       - "random"
       - "--rounds"
-      - "5"
+      - "{{workflow.parameters.rounds}}"
       - "--round"
       - "{{inputs.parameters.round}}"
       - "--epochs"
-      - "4"
+      - "{{workflow.parameters.epochs}}"
       - "--partitions"
-      - "1,2,3,10,22,24,25,26,28"
+      - "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33"
       - "--runs-root"
       - "{{workflow.parameters.runs-root}}"
       resources:

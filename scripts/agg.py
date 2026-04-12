@@ -41,8 +41,10 @@ class Aggregator:
                  self.args.round, self.args.rounds, len(partitions), partitions, self.args.algorithm)
 
         # 각 partition의 best.pt 및 metrics.json 로드
-        state_dicts = []
-        n_trains    = []
+        state_dicts  = []
+        n_trains     = []
+        metrics_list = []
+        part_ids     = []
         for p in partitions:
             ckpt_dir  = os.path.join(self.args.ckpt_root,
                                      self.args.job,
@@ -54,12 +56,15 @@ class Aggregator:
                 log.warning("  partition %2d — checkpoint not found (no training data?): %s", p, ckpt_path)
                 continue
             ckpt = torch.load(ckpt_path, map_location="cpu")
-            n_train = 0
+            metrics = {}
             if os.path.exists(metrics_path):
                 with open(metrics_path) as f:
-                    n_train = json.load(f).get("n_train", 0)
+                    metrics = json.load(f)
+            n_train = metrics.get("n_train", 0)
             state_dicts.append(ckpt["model"])
             n_trains.append(n_train)
+            metrics_list.append(metrics)
+            part_ids.append(p)
             log.info("  partition %2d — loaded  val_loss=%.4f  epoch=%d  n_train=%d",
                      p, ckpt.get("val_loss", float("nan")), ckpt.get("epoch", -1), n_train)
 
@@ -67,7 +72,7 @@ class Aggregator:
             raise RuntimeError("집계할 체크포인트가 없습니다.")
 
         # Aggregation
-        agg_state = self._aggregate(state_dicts, n_trains)
+        agg_state = self._aggregate(state_dicts, n_trains, metrics_list, part_ids)
         log.info("Aggregated %d / %d partitions", len(state_dicts), len(partitions))
 
         # 집계 모델 저장
@@ -208,6 +213,31 @@ class Aggregator:
         return df
 
     def _init_split(self):
+        # ── pool 재사용: 이전 실험 split.csv 의 pool 컬럼을 그대로 사용 ──────
+        if self.args.reuse_pool:
+            src = pd.read_csv(self.args.reuse_pool)
+            if "pool" not in src.columns:
+                raise ValueError(f"--reuse-pool CSV에 pool 컬럼이 없습니다: {self.args.reuse_pool}")
+            df = src[["Partition_ID", "Subject_ID", "TrainOrVal", "pool"]].copy()
+            df["Partition_ID"] = df["Partition_ID"].astype("Int64")
+            df["pool"] = df["pool"].astype("Int64")
+            n_pool_total  = int((df["pool"] == 1).sum())
+            n_train_total = int((df["TrainOrVal"] == "train").sum())
+            log.info("Reuse pool ← %s  (%d / %d train subjects)",
+                     self.args.reuse_pool, n_pool_total, n_train_total)
+            # entropy+static: pool 전체를 R00으로
+            df["R00"] = None
+            train_idx = df[df["TrainOrVal"] == "train"].index
+            df.loc[train_idx, "R00"] = df.loc[train_idx, "pool"]
+            df["R00"] = df["R00"].astype("Int64")
+            log.info("Reuse pool — R00: %d subjects selected", n_pool_total)
+            init_split = os.path.join(self.args.ckpt_root, self.args.job, "agg", "init", "split.csv")
+            os.makedirs(os.path.dirname(init_split), exist_ok=True)
+            df.to_csv(init_split, index=False)
+            log.info("Init split CSV saved → %s", init_split)
+            self._write_output("next-split-csv", init_split)
+            return
+
         df = pd.read_csv(self.args.split)[["Partition_ID", "Subject_ID", "TrainOrVal"]]
         df["Partition_ID"] = df["Partition_ID"].astype("Int64")
 
@@ -455,11 +485,13 @@ class Aggregator:
                             "agg.pt")
 
     # ── Aggregation ────────────────────────────────────────────────────────
-    def _aggregate(self, state_dicts, n_trains):
+    def _aggregate(self, state_dicts, n_trains, metrics_list, part_ids):
         if self.args.algorithm == "fedavg":
             return self._fedavg(state_dicts)
         if self.args.algorithm == "fedwavg":
             return self._fedwavg(state_dicts, n_trains)
+        if self.args.algorithm == "fedpid":
+            return self._fedpid(state_dicts, metrics_list, part_ids)
         raise ValueError(f"지원하지 않는 알고리즘: {self.args.algorithm}")
 
     def _fedavg(self, state_dicts):
@@ -479,6 +511,77 @@ class Aggregator:
         for key in state_dicts[0]:
             avg[key] = sum(w * sd[key].float() for w, sd in zip(weights, state_dicts))
         return avg
+
+    def _fedpid(self, state_dicts, metrics_list, part_ids):
+        kp = self.args.pid_kp
+        ki = self.args.pid_ki
+        kd = self.args.pid_kd
+
+        # 이전 라운드 PID state 로드 (I항, prev_error)
+        pid_state = self._load_pid_state()
+        integrals   = pid_state.get("integrals",   {})
+        prev_errors = pid_state.get("prev_errors", {})
+
+        pid_values = []
+        for m, p in zip(metrics_list, part_ids):
+            key = str(p)
+            prv = m.get("prv_val_loss", 0.0)
+            pst = m.get("pst_val_loss", prv)   # pst 없으면 개선량=0
+            error = prv - pst                   # 양수 = 개선
+
+            integral    = integrals.get(key, 0.0)   + ki * error
+            prev_error  = prev_errors.get(key, 0.0)
+            derivative  = kd * (error - prev_error)
+
+            pid = kp * error + integral + derivative
+            pid_values.append(pid)
+
+            # state 갱신
+            integrals[key]   = integral
+            prev_errors[key] = error
+
+            log.info("  FedPID partition %2d — prv=%.4f pst=%.4f error=%.4f "
+                     "P=%.4f I=%.4f D=%.4f pid=%.4f",
+                     p, prv, pst, error,
+                     kp * error, integral, derivative, pid)
+
+        # softmax 정규화
+        import math
+        max_pid = max(pid_values)
+        exp_vals = [math.exp(v - max_pid) for v in pid_values]  # numerical stability
+        total_exp = sum(exp_vals)
+        weights = [e / total_exp for e in exp_vals]
+        log.info("FedPID weights: %s", [f"{w:.4f}" for w in weights])
+
+        # PID state 저장 (다음 라운드 사용)
+        self._save_pid_state({"integrals": integrals, "prev_errors": prev_errors})
+
+        avg = {}
+        for key in state_dicts[0]:
+            avg[key] = sum(w * sd[key].float() for w, sd in zip(weights, state_dicts))
+        return avg
+
+    def _pid_state_path(self):
+        agg_dir = os.path.dirname(self._agg_path(self.args.round))
+        return os.path.join(agg_dir, "pid_state.json")
+
+    def _load_pid_state(self):
+        if self.args.round == 0:
+            return {}
+        prev_agg_dir = os.path.dirname(self._agg_path(self.args.round - 1))
+        path = os.path.join(prev_agg_dir, "pid_state.json")
+        if not os.path.exists(path):
+            log.warning("FedPID — 이전 라운드 pid_state.json 없음, 초기화합니다: %s", path)
+            return {}
+        with open(path) as f:
+            return json.load(f)
+
+    def _save_pid_state(self, state):
+        path = self._pid_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+        log.info("FedPID state saved → %s", path)
 
     def _write_output(self, name, value):
         out_dir = "/tmp/outputs"
@@ -516,9 +619,13 @@ def main():
     parser.add_argument("--committee-in-ch",      type=int, default=4,                  help="committee 모델 입력 채널 수")
     parser.add_argument("--committee-out-classes", type=int, default=1,                 help="committee 모델 출력 클래스 수")
     parser.add_argument("--committee-chan",        default="[t1,t1ce,t2,flair]",         help="committee 모델 입력 채널 (entropy 추론용)")
+    parser.add_argument("--reuse-pool",            default="",                            help="pool 재사용 — 이전 실험 split.csv 경로 (pool 컬럼 필요, entropy inference 스킵)")
     parser.add_argument("-D", "--data",     default="/data/fets128/trainval",    help="데이터 경로 (entropy 선택 시 추론에 사용)")
     parser.add_argument("--chan",           default="[t1,t1ce,t2,flair]",        help="입력 채널 (entropy 추론용)")
-    parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg / fedwavg)")
+    parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg / fedwavg / fedpid)")
+    parser.add_argument("--pid-kp",         type=float, default=1.0,            help="FedPID — proportional gain")
+    parser.add_argument("--pid-ki",         type=float, default=0.1,            help="FedPID — integral gain")
+    parser.add_argument("--pid-kd",         type=float, default=0.0,            help="FedPID — derivative gain")
     parser.add_argument("-J", "--job",      default="stage1",                   help="job 이름 (e.g. stage1 → stage1-p01, stage1/agg/)")
     parser.add_argument("--partitions",     default="",                         help="집계할 partition ID 목록 (콤마 구분, e.g. '1,2,5')")
     parser.add_argument("--ckpt-root",      default="/checkpoints",             help="체크포인트 루트 경로")
