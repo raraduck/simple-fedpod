@@ -40,27 +40,34 @@ class Aggregator:
         log.info("Round %d / %d — aggregating %d partitions %s (algorithm=%s)",
                  self.args.round, self.args.rounds, len(partitions), partitions, self.args.algorithm)
 
-        # 각 partition의 best.pt 로드
+        # 각 partition의 best.pt 및 metrics.json 로드
         state_dicts = []
+        n_trains    = []
         for p in partitions:
-            ckpt_path = os.path.join(self.args.ckpt_root,
+            ckpt_dir  = os.path.join(self.args.ckpt_root,
                                      self.args.job,
                                      f"inst{p:02d}",
-                                     f"R{self.args.rounds:02d}r{self.args.round:02d}",
-                                     "best.pt")
+                                     f"R{self.args.rounds:02d}r{self.args.round:02d}")
+            ckpt_path    = os.path.join(ckpt_dir, "best.pt")
+            metrics_path = os.path.join(ckpt_dir, "metrics.json")
             if not os.path.exists(ckpt_path):
                 log.warning("  partition %2d — checkpoint not found (no training data?): %s", p, ckpt_path)
                 continue
             ckpt = torch.load(ckpt_path, map_location="cpu")
+            n_train = 0
+            if os.path.exists(metrics_path):
+                with open(metrics_path) as f:
+                    n_train = json.load(f).get("n_train", 0)
             state_dicts.append(ckpt["model"])
-            log.info("  partition %2d — loaded  val_loss=%.4f  epoch=%d",
-                     p, ckpt.get("val_loss", float("nan")), ckpt.get("epoch", -1))
+            n_trains.append(n_train)
+            log.info("  partition %2d — loaded  val_loss=%.4f  epoch=%d  n_train=%d",
+                     p, ckpt.get("val_loss", float("nan")), ckpt.get("epoch", -1), n_train)
 
         if not state_dicts:
             raise RuntimeError("집계할 체크포인트가 없습니다.")
 
         # Aggregation
-        agg_state = self._aggregate(state_dicts)
+        agg_state = self._aggregate(state_dicts, n_trains)
         log.info("Aggregated %d / %d partitions", len(state_dicts), len(partitions))
 
         # 집계 모델 저장
@@ -436,16 +443,30 @@ class Aggregator:
                             f"R{self.args.rounds:02d}r{round_idx:02d}",
                             "agg.pt")
 
-    # ── FedAvg ─────────────────────────────────────────────────────────────
-    def _aggregate(self, state_dicts):
+    # ── Aggregation ────────────────────────────────────────────────────────
+    def _aggregate(self, state_dicts, n_trains):
         if self.args.algorithm == "fedavg":
             return self._fedavg(state_dicts)
+        if self.args.algorithm == "fedwavg":
+            return self._fedwavg(state_dicts, n_trains)
         raise ValueError(f"지원하지 않는 알고리즘: {self.args.algorithm}")
 
     def _fedavg(self, state_dicts):
         avg = {}
         for key in state_dicts[0]:
             avg[key] = torch.stack([sd[key].float() for sd in state_dicts]).mean(dim=0)
+        return avg
+
+    def _fedwavg(self, state_dicts, n_trains):
+        total = sum(n_trains)
+        if total == 0:
+            log.warning("FedWAvg — 모든 n_train=0, FedAvg로 대체합니다.")
+            return self._fedavg(state_dicts)
+        weights = [n / total for n in n_trains]
+        log.info("FedWAvg weights: %s", [f"{w:.4f}" for w in weights])
+        avg = {}
+        for key in state_dicts[0]:
+            avg[key] = sum(w * sd[key].float() for w, sd in zip(weights, state_dicts))
         return avg
 
     def _write_output(self, name, value):
@@ -486,7 +507,7 @@ def main():
     parser.add_argument("--committee-chan",        default="[t1,t1ce,t2,flair]",         help="committee 모델 입력 채널 (entropy 추론용)")
     parser.add_argument("-D", "--data",     default="/data/fets128/trainval",    help="데이터 경로 (entropy 선택 시 추론에 사용)")
     parser.add_argument("--chan",           default="[t1,t1ce,t2,flair]",        help="입력 채널 (entropy 추론용)")
-    parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg)")
+    parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg / fedwavg)")
     parser.add_argument("-J", "--job",      default="stage1",                   help="job 이름 (e.g. stage1 → stage1-p01, stage1/agg/)")
     parser.add_argument("--partitions",     default="",                         help="집계할 partition ID 목록 (콤마 구분, e.g. '1,2,5')")
     parser.add_argument("--ckpt-root",      default="/checkpoints",             help="체크포인트 루트 경로")

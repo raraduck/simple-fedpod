@@ -37,6 +37,8 @@ spec:
       value: "entropy"
     - name: agg-sampling-mode
       value: "dynamic"
+    - name: algorithm
+      value: "fedavg"
 
   volumes:
   - name: app-volume
@@ -1199,7 +1201,7 @@ spec:
       - name: dshm
         mountPath: /dev/shm
 
-  # ── Agg Job (FedAvg — agg.pt + split CSV 생성) ────────────────────────────
+  # ── Agg Job (FedAvg / FedWAvg — agg.pt + split CSV 생성) ────────────────────
   - name: agg-job
     inputs:
       parameters:
@@ -1254,6 +1256,8 @@ spec:
       - "{{workflow.parameters.epochs}}"
       - "--partitions"
       - "1,2,3,10,22,24,25,26,28"
+      - "--algorithm"
+      - "{{workflow.parameters.algorithm}}"
       - "--runs-root"
       - "{{workflow.parameters.runs-root}}"
       resources:

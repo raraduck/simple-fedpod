@@ -29,6 +29,8 @@ spec:
       value: "random"
     - name: agg-sampling-mode
       value: "static"
+    - name: algorithm
+      value: "fedavg"
 
   volumes:
   - name: app-volume
@@ -1571,6 +1573,10 @@ spec:
       - "pool"
       - "--selection"
       - "{{workflow.parameters.selection}}"
+      - "--in-ch"
+      - "5"
+      - "--out-classes"
+      - "3"
       resources:
         requests:
           cpu: "2"
@@ -1735,7 +1741,7 @@ spec:
       - name: dshm
         mountPath: /dev/shm
 
-  # ── Agg Job (FedAvg — agg.pt + split CSV 생성) ────────────────────────────
+  # ── Agg Job (FedAvg / FedWAvg — agg.pt + split CSV 생성) ────────────────────
   - name: agg-job
     inputs:
       parameters:
@@ -1790,6 +1796,8 @@ spec:
       - "{{workflow.parameters.epochs}}"
       - "--partitions"
       - "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33"
+      - "--algorithm"
+      - "{{workflow.parameters.algorithm}}"
       - "--runs-root"
       - "{{workflow.parameters.runs-root}}"
       resources:
