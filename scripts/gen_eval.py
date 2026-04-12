@@ -76,6 +76,7 @@ def main():
     # Run
     parser.add_argument("-J", "--job",       default="stage2",                                      help="job 이름")
     parser.add_argument("--runs-root",       default="/runs",                                       help="TensorBoard runs 루트 경로")
+    parser.add_argument("--inst",            default="",                                            help="기관 ID (지정 시 gen_eval/inst{PP}/ 에 기록, stage1 용)")
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
@@ -146,7 +147,8 @@ def main():
     r           = args.round
     epoch_start = args.round * args.epochs
 
-    runs_dir = os.path.join(args.runs_root, args.job, "gen_eval")
+    runs_dir = os.path.join(args.runs_root, args.job, "gen_eval",
+                            f"inst{args.inst}") if args.inst else os.path.join(args.runs_root, args.job, "gen_eval")
     with SummaryWriter(runs_dir) as writer:
         # round 단위 (x = round 번호)
         writer.add_scalar("rnd_val_loss_prv/avg",     avg_loss, r)

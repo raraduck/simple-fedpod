@@ -131,6 +131,8 @@ spec:
         dependencies: [train-r0]
         arguments:
           parameters:
+          - name: inst
+            value: "{{item.inst}}"
           - name: split-csv
             value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
           - name: round
@@ -238,6 +240,8 @@ spec:
         dependencies: [train-r1]
         arguments:
           parameters:
+          - name: inst
+            value: "{{item.inst}}"
           - name: split-csv
             value: "{{tasks.agg-r0.outputs.parameters.next-split-csv}}"
           - name: round
@@ -345,6 +349,8 @@ spec:
         dependencies: [train-r2]
         arguments:
           parameters:
+          - name: inst
+            value: "{{item.inst}}"
           - name: split-csv
             value: "{{tasks.agg-r1.outputs.parameters.next-split-csv}}"
           - name: round
@@ -452,6 +458,8 @@ spec:
         dependencies: [train-r3]
         arguments:
           parameters:
+          - name: inst
+            value: "{{item.inst}}"
           - name: split-csv
             value: "{{tasks.agg-r2.outputs.parameters.next-split-csv}}"
           - name: round
@@ -559,6 +567,8 @@ spec:
         dependencies: [train-r4]
         arguments:
           parameters:
+          - name: inst
+            value: "{{item.inst}}"
           - name: split-csv
             value: "{{tasks.agg-r3.outputs.parameters.next-split-csv}}"
           - name: round
@@ -600,13 +610,14 @@ spec:
         - { inst: "32" }
         - { inst: "33" }
 
-  # ── Eval Job (gen_eval — agg.pt 를 모든 기관 val 에 평가) ───────────────
+  # ── Eval Job (gen_eval — 각 기관 모델을 모든 val 에 평가) ───────────────
   - name: eval-job
     inputs:
       parameters:
       - name: split-csv
       - name: round
       - name: init-ckpt
+      - name: inst
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
@@ -650,6 +661,8 @@ spec:
       - "[1]"
       - "--gpu"
       - "1"
+      - "--inst"
+      - "{{inputs.parameters.inst}}"
       resources:
         requests:
           cpu: "4"
