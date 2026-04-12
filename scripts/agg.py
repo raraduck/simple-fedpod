@@ -228,10 +228,21 @@ class Aggregator:
             df.loc[non_pool, "pool"] = 0
             df["pool"] = df["pool"].astype("Int64")
             df = df.drop(columns=["_pool_tmp"])
+            n_pool_total = int((df["pool"] == 1).sum())
+            n_train_total = int((df["TrainOrVal"] == "train").sum())
             log.info("Pool — %d / %d train subjects in pool (selection=%s)",
-                    int((~non_pool & (df["TrainOrVal"] == "train")).sum()), int((df["TrainOrVal"] == "train").sum()), self.args.selection)
-            # Step 2: pool 내에서 per-partition Poisson 샘플링 → R00
-            df = self._sample_train(df, "R00")
+                    n_pool_total, n_train_total, self.args.selection)
+            # Step 2: R00 컬럼 생성
+            # entropy+static: pool 전체를 학습 대상으로 사용 (Poisson sub-sampling 없음)
+            # random: pool 내에서 per-partition Poisson 샘플링
+            if self.args.selection == "entropy":
+                df["R00"] = None
+                train_idx = df[df["TrainOrVal"] == "train"].index
+                df.loc[train_idx, "R00"] = df.loc[train_idx, "pool"]
+                df["R00"] = df["R00"].astype("Int64")
+                log.info("Entropy+static — R00: all %d pool subjects selected (no Poisson sub-sampling)", n_pool_total)
+            else:
+                df = self._sample_train(df, "R00")
         else:
             # static / dynamic 공통 기본 흐름
             if self.args.selection == "entropy":
