@@ -62,7 +62,7 @@ spec:
 
   # ── DAG ───────────────────────────────────────────────────────────────────
   # rounds=5, epochs=4, partitions=1..33
-  # stage1 FL 규칙: 각 기관이 자신의 이전 라운드 best.pt 에서 이어서 학습
+  # stage1 FL 규칙: 각 기관이 자신의 이전 라운드 latest.pt 에서 이어서 학습 (오버피팅 회피)
   # (글로벌 agg.pt 미사용 — committee 모델 생성 목적)
   # epoch offset: r0=0, r1=4, r2=8, r3=12, r4=16
   - name: stage1
@@ -189,7 +189,7 @@ spec:
           - name: epoch
             value: "{{tasks.agg-r0.outputs.parameters.next-epoch}}"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r00/best.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r00/latest.pt"
         withItems:
         - { partition: "1",  inst: "01" }
         - { partition: "2",  inst: "02" }
@@ -298,7 +298,7 @@ spec:
           - name: epoch
             value: "{{tasks.agg-r1.outputs.parameters.next-epoch}}"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r01/best.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r01/latest.pt"
         withItems:
         - { partition: "1",  inst: "01" }
         - { partition: "2",  inst: "02" }
@@ -407,7 +407,7 @@ spec:
           - name: epoch
             value: "{{tasks.agg-r2.outputs.parameters.next-epoch}}"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r02/best.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r02/latest.pt"
         withItems:
         - { partition: "1",  inst: "01" }
         - { partition: "2",  inst: "02" }
@@ -516,7 +516,7 @@ spec:
           - name: epoch
             value: "{{tasks.agg-r3.outputs.parameters.next-epoch}}"
           - name: init-ckpt
-            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r03/best.pt"
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r03/latest.pt"
         withItems:
         - { partition: "1",  inst: "01" }
         - { partition: "2",  inst: "02" }
@@ -809,7 +809,7 @@ spec:
       - name: dshm
         mountPath: /dev/shm
 
-  # ── Train Job — Round 1+ (init-ckpt = 이전 라운드 로컬 best.pt) ──────────
+  # ── Train Job — Round 1+ (init-ckpt = 이전 라운드 로컬 latest.pt) ─────────
   - name: train-job
     inputs:
       parameters:
