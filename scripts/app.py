@@ -82,6 +82,12 @@ class App:
                 out = model(dummy)
             log.info("Forward pass — input: %s  output: %s", tuple(dummy.shape), tuple(out.shape))
 
+        # ── 학습 데이터 없음: 즉시 종료 (gen_eval 이 전체 val 평가를 대체) ──
+        if not train_subjects:
+            log.warning("Empty-train exit — partition=%d round=%d, skipped (no training subjects).",
+                        self.args.partition, self.args.round)
+            return
+
         # Training
         ckpt_dir = os.path.join(self.args.ckpt_root, self.args.job,
                                 f"inst{self.args.partition:02d}",
@@ -94,42 +100,6 @@ class App:
 
         prv_val  = trainer.eval()
         prv_dice = trainer.eval_dice()
-
-        # ── 학습 데이터 없음: prv-val 기록 후 종료 ──────────────────────────
-        if not train_subjects:
-            prv_dice_avg = sum(prv_dice.values()) / len(prv_dice) if prv_dice else 0.0
-            metrics = {
-                "partition":    self.args.partition,
-                "round":        self.args.round,
-                "n_train":      0,
-                "prv_val_loss": round(prv_val,      6),
-                "prv_dice":     {k: round(v, 6) for k, v in prv_dice.items()},
-                "prv_dice_avg": round(prv_dice_avg, 6),
-            }
-            with open(os.path.join(ckpt_dir, "metrics.json"), "w") as f:
-                json.dump(metrics, f, indent=2)
-            runs_dir    = os.path.join(self.args.runs_root, self.args.job,
-                                       f"inst{self.args.partition:02d}")
-            epoch_start = self.args.epoch
-            r           = self.args.round
-            with SummaryWriter(runs_dir) as writer:
-                writer.add_scalar("rnd_val_loss_prv/avg",    prv_val,      r)
-                writer.add_scalar("rnd_val_loss_prvpst/avg", prv_val,      r)
-                writer.add_scalar("rnd_val_dice_prv/avg",    prv_dice_avg, r)
-                writer.add_scalar("rnd_val_dice_prvpst/avg", prv_dice_avg, r)
-                for name in lnam:
-                    writer.add_scalar(f"rnd_val_dice_prv/{name}",    prv_dice[name], r)
-                    writer.add_scalar(f"rnd_val_dice_prvpst/{name}", prv_dice[name], r)
-                writer.add_scalar("ech_val_loss_prv/avg",    prv_val,      epoch_start)
-                writer.add_scalar("ech_val_loss_prvpst/avg", prv_val,      epoch_start)
-                writer.add_scalar("ech_val_dice_prv/avg",    prv_dice_avg, epoch_start)
-                writer.add_scalar("ech_val_dice_prvpst/avg", prv_dice_avg, epoch_start)
-                for name in lnam:
-                    writer.add_scalar(f"ech_val_dice_prv/{name}",    prv_dice[name], epoch_start)
-                    writer.add_scalar(f"ech_val_dice_prvpst/{name}", prv_dice[name], epoch_start)
-            log.info("Empty-train exit — partition=%d  prv_loss=%.4f  prv_dice_avg=%.4f",
-                     self.args.partition, prv_val, prv_dice_avg)
-            return
 
         trn_losses, val_losses = [], []
         for epoch in range(trainer.start_epoch, self.args.epoch + self.args.epochs + 1):

@@ -105,9 +105,38 @@ spec:
             value: "{{tasks.dry-run.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r0
         template: eval-job
@@ -149,9 +178,38 @@ spec:
             value: "{{tasks.agg-r0.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r1
         template: eval-job
@@ -193,9 +251,38 @@ spec:
             value: "{{tasks.agg-r1.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r2
         template: eval-job
@@ -237,9 +324,38 @@ spec:
             value: "{{tasks.agg-r2.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r3
         template: eval-job
@@ -281,9 +397,38 @@ spec:
             value: "{{tasks.agg-r3.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r4
         template: eval-job
@@ -325,9 +470,38 @@ spec:
             value: "{{tasks.agg-r4.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r5
         template: eval-job
@@ -369,9 +543,38 @@ spec:
             value: "{{tasks.agg-r5.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r6
         template: eval-job
@@ -413,9 +616,38 @@ spec:
             value: "{{tasks.agg-r6.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r7
         template: eval-job
@@ -457,9 +689,38 @@ spec:
             value: "{{tasks.agg-r7.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r8
         template: eval-job
@@ -501,9 +762,38 @@ spec:
             value: "{{tasks.agg-r8.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r9
         template: eval-job
@@ -545,9 +835,38 @@ spec:
             value: "{{tasks.agg-r9.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r10
         template: eval-job
@@ -589,9 +908,38 @@ spec:
             value: "{{tasks.agg-r10.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r11
         template: eval-job
@@ -633,9 +981,38 @@ spec:
             value: "{{tasks.agg-r11.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r12
         template: eval-job
@@ -677,9 +1054,38 @@ spec:
             value: "{{tasks.agg-r12.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r13
         template: eval-job
@@ -721,9 +1127,38 @@ spec:
             value: "{{tasks.agg-r13.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r14
         template: eval-job
@@ -765,9 +1200,38 @@ spec:
             value: "{{tasks.agg-r14.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r15
         template: eval-job
@@ -809,9 +1273,38 @@ spec:
             value: "{{tasks.agg-r15.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r16
         template: eval-job
@@ -853,9 +1346,38 @@ spec:
             value: "{{tasks.agg-r16.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r17
         template: eval-job
@@ -897,9 +1419,38 @@ spec:
             value: "{{tasks.agg-r17.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r18
         template: eval-job
@@ -941,9 +1492,38 @@ spec:
             value: "{{tasks.agg-r18.outputs.parameters.next-init-ckpt}}"
         withItems:
         - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
         - { partition: "24" }
         - { partition: "25" }
         - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
 
       - name: eval-r19
         template: eval-job
@@ -1257,7 +1837,7 @@ spec:
       - "--epochs"
       - "{{workflow.parameters.epochs}}"
       - "--partitions"
-      - "1,2,3,10,22,24,25,26,28"
+      - "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33"
       - "--algorithm"
       - "{{workflow.parameters.algorithm}}"
       - "--runs-root"
