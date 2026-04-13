@@ -33,8 +33,8 @@ class Aggregator:
 
         if self.args.sampling_mode == "pool":
             raise ValueError("--sampling-mode pool은 dry-run 전용입니다. 라운드에서는 static 또는 dynamic을 사용하세요.")
-        if self.args.selection == "entropy":
-            raise ValueError("라운드에서 --selection entropy는 지원하지 않습니다. --selection random을 사용하세요.")
+        if self.args.selection in ("entropy", "anti_entropy"):
+            raise ValueError("라운드에서 --selection entropy/anti_entropy는 지원하지 않습니다. --selection random을 사용하세요.")
 
         partitions = [int(p.strip()) for p in self.args.partitions.split(",") if p.strip()]
         log.info("Round %d / %d — aggregating %d partitions %s (algorithm=%s)",
@@ -225,11 +225,23 @@ class Aggregator:
             n_train_total = int((df["TrainOrVal"] == "train").sum())
             log.info("Reuse pool ← %s  (%d / %d train subjects)",
                      self.args.reuse_pool, n_pool_total, n_train_total)
-            # pool 내에서 sampling-rate 적용한 Poisson 서브샘플링 → R00
-            df = self._sample_train(df, "R00")
+            # pool 내에서 sampling-rate 서브샘플링 → R00
+            #   entropy/anti_entropy: global BALD 순위 기반 k-cut
+            #   random: per-partition Poisson(λ) within pool
+            if self.args.selection in ("entropy", "anti_entropy"):
+                if not (self.args.committee or self.args.committee_job):
+                    log.warning("--selection %s 이지만 --committee 미지정 → random으로 대체", self.args.selection)
+                    df = self._sample_train(df, "R00")
+                else:
+                    device   = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
+                    models   = self._build_committee(device)
+                    channels = self.args.committee_chan.strip("[]").split(",")
+                    df, _    = self._sample_train_entropy(df, "R00", models, device, channels)
+            else:
+                df = self._sample_train(df, "R00")
             n_r00 = int((df["R00"] == 1).sum())
-            log.info("Reuse pool — R00: %d / %d pool subjects selected (sampling_rate=%.2f)",
-                     n_r00, n_pool_total, self.args.sampling_rate)
+            log.info("Reuse pool — R00: %d / %d pool subjects selected (selection=%s, sampling_rate=%.2f)",
+                     n_r00, n_pool_total, self.args.selection, self.args.sampling_rate)
             init_split = os.path.join(self.args.ckpt_root, self.args.job, "agg", "init", "split.csv")
             os.makedirs(os.path.dirname(init_split), exist_ok=True)
             df.to_csv(init_split, index=False)
@@ -244,15 +256,16 @@ class Aggregator:
             # Step 1: pool 결정 — entropy/random 모두 rate=1.0 으로 최대 coverage
             orig_rate = self.args.sampling_rate
             self.args.sampling_rate = 1.0
-            if self.args.selection == "entropy":
+            if self.args.selection in ("entropy", "anti_entropy"):
                 if not (self.args.committee or self.args.committee_job):
-                    raise RuntimeError("pool+entropy dry-run에는 --committee 또는 --committee-job 이 필요합니다.")
+                    raise RuntimeError("pool+entropy/anti_entropy dry-run에는 --committee 또는 --committee-job 이 필요합니다.")
                 device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
                 models = self._build_committee(device)
                 channels = self.args.committee_chan.strip("[]").split(",")
-                df = self._sample_train_entropy(df, "_pool_tmp", models, device, channels)
+                df, pool_scores = self._sample_train_entropy(df, "_pool_tmp", models, device, channels)
             else:  # random
                 df = self._sample_train(df, "_pool_tmp")
+                pool_scores = None
             self.args.sampling_rate = orig_rate
             non_pool = (df["TrainOrVal"] == "train") & (df["_pool_tmp"] == 0)
             df["pool"] = pd.NA
@@ -264,22 +277,29 @@ class Aggregator:
             n_train_total = int((df["TrainOrVal"] == "train").sum())
             log.info("Pool — %d / %d train subjects in pool (selection=%s)",
                     n_pool_total, n_train_total, self.args.selection)
-            # Step 2: R00 — pool 내에서 sampling_rate 적용한 Poisson 서브샘플링
-            df = self._sample_train(df, "R00")
+            # Step 2: R00 — actual sampling_rate 로 서브샘플링
+            #   entropy/anti_entropy: global BALD 순위 기반 top-k (pool_scores 재사용, 재추론 없음)
+            #                        → Poisson per-partition 대신 순위 기반 k-cut으로 불균일 분포 방지
+            #   random: pool 내 per-partition Poisson(λ)
+            if self.args.selection in ("entropy", "anti_entropy"):
+                df, _ = self._sample_train_entropy(df, "R00", models, device, channels,
+                                                   cached_scores=pool_scores)
+            else:
+                df = self._sample_train(df, "R00")
             n_r00 = int((df["R00"] == 1).sum())
-            log.info("Pool R00 — %d / %d pool subjects selected (sampling_rate=%.2f)",
-                     n_r00, n_pool_total, self.args.sampling_rate)
+            log.info("Pool R00 — %d / %d pool subjects selected (selection=%s, sampling_rate=%.2f)",
+                     n_r00, n_pool_total, self.args.selection, self.args.sampling_rate)
         else:
             # static / dynamic 공통 기본 흐름
-            if self.args.selection == "entropy":
+            if self.args.selection in ("entropy", "anti_entropy"):
                 if not (self.args.committee or self.args.committee_job):
-                    log.warning("--selection entropy 이지만 --committee 미지정 → random으로 대체")
+                    log.warning("--selection %s 이지만 --committee 미지정 → random으로 대체", self.args.selection)
                     df = self._sample_train(df, "R00")
                 else:
                     device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
                     models = self._build_committee(device)
                     channels = self.args.committee_chan.strip("[]").split(",")
-                    df = self._sample_train_entropy(df, "R00", models, device, channels)
+                    df, _ = self._sample_train_entropy(df, "R00", models, device, channels)
             else:
                 df = self._sample_train(df, "R00")
 
@@ -301,8 +321,8 @@ class Aggregator:
             df["pool"] = df["pool"].astype("Int64")
         next_col = f"R{next_round:02d}"
         if self.args.sampling_mode == "dynamic":
-            if self.args.selection == "entropy":
-                raise ValueError("라운드에서 --selection entropy는 지원하지 않습니다. --selection random을 사용하세요.")
+            if self.args.selection in ("entropy", "anti_entropy"):
+                raise ValueError("라운드에서 --selection entropy/anti_entropy는 지원하지 않습니다. --selection random을 사용하세요.")
             df = self._sample_train(df, next_col)
         else:  # static: 초기 선택 그대로 유지
             prev_col = f"R{round_idx:02d}"
@@ -386,58 +406,68 @@ class Aggregator:
         model.to(device).eval()
         return model
 
-    def _sample_train_entropy(self, df, col, models, device, channels):
-        """모델 committee로 전체 train subject 추론 → 예측 평균 엔트로피 기준 global top-k 선택."""
+    def _sample_train_entropy(self, df, col, models, device, channels,
+                               cached_scores=None):
+        """모델 committee로 전체 train subject 추론 → 예측 평균 엔트로피 기준 global top-k 선택.
+
+        cached_scores: {subject_id: score} 딕셔너리를 외부에서 전달하면 재추론을 건너뜀.
+        반환값: (df, scores) — scores는 이후 호출에서 cached_scores로 재사용 가능.
+        """
         import nibabel as nib
 
         partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].unique())
         per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
                  for p in partitions]
         lam = np.mean(per_n) * self.args.sampling_rate
-        # global top-k: random 모드와 동일하게 파티션별 min(round(λ), n_i) 합산
+        # global top-k: 파티션별 min(round(λ), n_i) 합산
         k = int(sum(int(np.clip(round(lam), 1, n)) for n in per_n))
         use_bald = len(models) > 1
         metric_name = "BALD" if use_bald else "entropy"
         log.info("%s selection — committee=%d  λ=%.2f  global k=%d  (total train=%d)",
                  metric_name.upper(), len(models), lam, k, sum(per_n))
 
-        train_rows = df[df["TrainOrVal"] == "train"]
-        scores = {}   # subject_id → score
-        eps = 1e-6
-        n_total = len(train_rows)
-        log_interval = max(1, n_total // 10)
-        with torch.no_grad():
-            for i, (_, row) in enumerate(train_rows.iterrows()):
-                subj = row["Subject_ID"]
-                if i % log_interval == 0:
-                    log.info("  %s scoring — %d / %d", metric_name.upper(), i, n_total)
-                try:
-                    imgs = []
-                    for ch in channels:
-                        path = os.path.join(self.args.data,
-                                            subj, f"{subj}_{ch}.nii.gz")
-                        imgs.append(nib.load(path).get_fdata(dtype=np.float32))
-                    x = torch.tensor(np.stack(imgs)[None]).to(device)  # (1,C,H,W,D)
-                    preds = torch.stack([torch.sigmoid(m(x)) for m in models])  # (M,1,L,H,W,D)
-                    if use_bald:
-                        # BALD = H[E_m[p]] - E_m[H[p_m]]
-                        # 모델 간 불일치가 클수록 높은 값 → inter-domain uncertainty
-                        p_mean = preds.mean(dim=0).cpu().numpy()          # (1,L,H,W,D)
-                        p_all  = preds.cpu().numpy()                       # (M,1,L,H,W,D)
-                        h_mean = -(p_mean * np.log(p_mean + eps) + (1 - p_mean) * np.log(1 - p_mean + eps))
-                        h_ind  = -(p_all  * np.log(p_all  + eps) + (1 - p_all)  * np.log(1 - p_all  + eps))
-                        score  = float((h_mean - h_ind.mean(axis=0)).mean())
-                    else:
-                        # 단일 모델: 예측 엔트로피
-                        p = preds[0].cpu().numpy()                         # (1,L,H,W,D)
-                        score = float(-(p * np.log(p + eps) + (1 - p) * np.log(1 - p + eps)).mean())
-                    scores[subj] = score
-                except Exception as e:
-                    log.warning("  %s — %s 계산 실패: %s", subj, metric_name, e)
-                    scores[subj] = 0.0
+        if cached_scores is not None:
+            scores = cached_scores
+            log.info("%s scoring — cached scores 재사용 (%d subjects)", metric_name.upper(), len(scores))
+        else:
+            train_rows = df[df["TrainOrVal"] == "train"]
+            scores = {}   # subject_id → score
+            eps = 1e-6
+            n_total = len(train_rows)
+            log_interval = max(1, n_total // 10)
+            with torch.no_grad():
+                for i, (_, row) in enumerate(train_rows.iterrows()):
+                    subj = row["Subject_ID"]
+                    if i % log_interval == 0:
+                        log.info("  %s scoring — %d / %d", metric_name.upper(), i, n_total)
+                    try:
+                        imgs = []
+                        for ch in channels:
+                            path = os.path.join(self.args.data,
+                                                subj, f"{subj}_{ch}.nii.gz")
+                            imgs.append(nib.load(path).get_fdata(dtype=np.float32))
+                        x = torch.tensor(np.stack(imgs)[None]).to(device)  # (1,C,H,W,D)
+                        preds = torch.stack([torch.sigmoid(m(x)) for m in models])  # (M,1,L,H,W,D)
+                        if use_bald:
+                            # BALD = H[E_m[p]] - E_m[H[p_m]]
+                            # 모델 간 불일치가 클수록 높은 값 → inter-domain uncertainty
+                            p_mean = preds.mean(dim=0).cpu().numpy()          # (1,L,H,W,D)
+                            p_all  = preds.cpu().numpy()                       # (M,1,L,H,W,D)
+                            h_mean = -(p_mean * np.log(p_mean + eps) + (1 - p_mean) * np.log(1 - p_mean + eps))
+                            h_ind  = -(p_all  * np.log(p_all  + eps) + (1 - p_all)  * np.log(1 - p_all  + eps))
+                            score  = float((h_mean - h_ind.mean(axis=0)).mean())
+                        else:
+                            # 단일 모델: 예측 엔트로피
+                            p = preds[0].cpu().numpy()                         # (1,L,H,W,D)
+                            score = float(-(p * np.log(p + eps) + (1 - p) * np.log(1 - p + eps)).mean())
+                        scores[subj] = score
+                    except Exception as e:
+                        log.warning("  %s — %s 계산 실패: %s", subj, metric_name, e)
+                        scores[subj] = 0.0
 
-        # 점수 내림차순 정렬 → global top-k
-        ranked = sorted(scores, key=scores.__getitem__, reverse=True)
+        # anti_entropy: 하위 k (lowest BALD), 그 외: 상위 k (highest BALD)
+        descending = (self.args.selection != "anti_entropy")
+        ranked = sorted(scores, key=scores.__getitem__, reverse=descending)
         selected = set(ranked[:k])
         if ranked:
             log.info("%s range — top=%.4f  k-th=%.4f  bottom=%.4f", metric_name.upper(),
@@ -455,7 +485,7 @@ class Aggregator:
             log.info("  Partition %s — train=%d  selected=%d", p, len(train_idx), n_sel)
 
         df[col] = df[col].astype("Int64")
-        return df
+        return df, scores
 
     # ── 초기 모델 생성 (dry-run) ────────────────────────────────────────────
     def _init_model(self):
@@ -606,7 +636,7 @@ def main():
     parser.add_argument("--gpu",            type=int,   default=1,              help="GPU 사용 여부 (1/0) — entropy 추론에 적용")
     parser.add_argument("--sampling-rate",  type=float, default=1.0,            help="train subjects 샘플링 비율 (0.0~1.0)")
     parser.add_argument("--sampling-mode",  default="static",                   help="샘플링 모드 (static / dynamic / pool)")
-    parser.add_argument("--selection",      default="random",                   help="subject 선택 방식 (random / entropy)")
+    parser.add_argument("--selection",      default="random",                   help="subject 선택 방식 (random / entropy / anti_entropy)")
     parser.add_argument("--committee",            default="",    help="entropy 선택용 모델 경로 (.pt 또는 폴더, 콤마 구분 복수 경로)")
     parser.add_argument("--committee-job",        default="",    help="committee job 이름 — 체크포인트 구조에서 자동 경로 생성 시 사용")
     parser.add_argument("--committee-rounds",     type=int, default=1, help="committee job의 총 라운드 수")
