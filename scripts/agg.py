@@ -271,14 +271,18 @@ class Aggregator:
 
         if self.args.sampling_mode == "pool":
             if self.args.selection in ("entropy", "anti_entropy"):
-                # ── entropy/anti_entropy: 전체 train subject BALD 추론 → 전체 순위 기록 ──
-                # pool 컬럼 = 전체 N개 train subject의 global BALD 순위 (1=최고 BALD, N=최저)
-                # reuse-pool 시 별도 파일 없이 정렬만으로 top-k(entropy) / bottom-k(anti_entropy) k-cut
-                if not (self.args.committee or self.args.committee_job):
-                    raise RuntimeError("pool+entropy/anti_entropy dry-run에는 --committee 또는 --committee-job 이 필요합니다.")
-                device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
-                models = self._build_committee(device)
-                channels = self.args.committee_chan.strip("[]").split(",")
+                # ── entropy/anti_entropy: 전체 train subject 점수 계산 → 전체 순위 기록 ──
+                # pool 컬럼 = 전체 N개 train subject의 global 점수 순위 (1=최고, N=최저)
+                # scoring=bald: committee BALD, scoring=texture: ROI intensity entropy
+                scoring = getattr(self.args, "scoring", "bald")
+                if scoring == "bald":
+                    if not (self.args.committee or self.args.committee_job):
+                        raise RuntimeError("pool+entropy/anti_entropy+scoring=bald 에는 --committee 또는 --committee-job 이 필요합니다.")
+                    device   = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
+                    models   = self._build_committee(device)
+                    channels = self.args.committee_chan.strip("[]").split(",")
+                else:  # texture: 모델 불필요
+                    device, models, channels = None, None, None
                 # rate=1.0 으로 호출해도 _pool_tmp 결과는 버리고 pool_scores(전체) 만 사용
                 orig_rate = self.args.sampling_rate
                 self.args.sampling_rate = 1.0
@@ -440,69 +444,122 @@ class Aggregator:
         model.to(device).eval()
         return model
 
-    def _sample_train_entropy(self, df, col, models, device, channels,
-                               cached_scores=None):
-        """모델 committee로 전체 train subject 추론 → 예측 평균 엔트로피 기준 global top-k 선택.
+    def _score_texture(self, subj, channels):
+        """ROI (tumor mask, _sub.nii.gz > 0) 내 채널별 intensity entropy 평균.
 
-        cached_scores: {subject_id: score} 딕셔너리를 외부에서 전달하면 재추론을 건너뜀.
-        반환값: (df, scores) — scores는 이후 호출에서 cached_scores로 재사용 가능.
+        entropy = -Σ p(i) log p(i)  (ROI 강도 히스토그램, 64 bins)
+        값이 클수록 ROI 내 강도 분포가 복잡(heterogeneous) → 내재적 난이도 높음.
         """
         import nibabel as nib
+
+        seg_path = os.path.join(self.args.data, subj, f"{subj}_sub.nii.gz")
+        try:
+            seg  = nib.load(seg_path).get_fdata(dtype=np.float32)
+            mask = seg > 0
+        except Exception as e:
+            log.warning("  texture — %s seg 로드 실패: %s  → score=0", subj, e)
+            return 0.0
+
+        if not mask.any():
+            return 0.0
+
+        entropies = []
+        for ch in channels:
+            path = os.path.join(self.args.data, subj, f"{subj}_{ch}.nii.gz")
+            try:
+                img = nib.load(path).get_fdata(dtype=np.float32)
+            except Exception as e:
+                log.warning("  texture — %s %s 로드 실패: %s", subj, ch, e)
+                continue
+            roi = img[mask]
+            rng = roi.max() - roi.min()
+            if rng < 1e-8:
+                entropies.append(0.0)
+                continue
+            roi_norm = (roi - roi.min()) / rng
+            hist, _  = np.histogram(roi_norm, bins=64, range=(0.0, 1.0))
+            hist     = hist.astype(np.float64)
+            hist    /= hist.sum() + 1e-8
+            hist     = hist[hist > 0]
+            entropies.append(float(-np.sum(hist * np.log(hist))))
+        return float(np.mean(entropies)) if entropies else 0.0
+
+    def _sample_train_entropy(self, df, col, models, device, channels,
+                               cached_scores=None):
+        """scoring 방식(bald / texture)에 따라 전체 train subject 점수 계산 → global top-k 선택.
+
+        scoring=bald   : committee 모델 앙상블 BALD (inter-model uncertainty)
+        scoring=texture: ROI 내 intensity entropy (데이터 내재적 복잡도, 모델 불필요)
+
+        cached_scores: {subject_id: score} 딕셔너리를 전달하면 재계산 없이 재사용.
+        반환값: (df, scores)
+        """
+        import nibabel as nib
+
+        scoring = getattr(self.args, "scoring", "bald")
 
         partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].unique())
         per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
                  for p in partitions]
         lam = np.mean(per_n) * self.args.sampling_rate
-        # global top-k: 파티션별 min(round(λ), n_i) 합산
-        k = int(sum(int(np.clip(round(lam), 1, n)) for n in per_n))
-        use_bald = (models is not None and len(models) > 1)
-        metric_name = "BALD" if use_bald else "entropy"
+        k   = int(sum(int(np.clip(round(lam), 1, n)) for n in per_n))
+
+        use_bald    = (scoring == "bald") and (models is not None and len(models) > 1)
+        metric_name = "BALD" if use_bald else ("entropy" if scoring == "bald" else "texture")
         n_committee = len(models) if models is not None else 0
-        log.info("%s selection — committee=%d  λ=%.2f  global k=%d  (total train=%d)",
+        log.info("%s scoring — committee=%d  λ=%.2f  global k=%d  (total train=%d)",
                  metric_name.upper(), n_committee, lam, k, sum(per_n))
 
         if cached_scores is not None:
             scores = cached_scores
-            log.info("%s scoring — cached scores 재사용 (%d subjects)", metric_name.upper(), len(scores))
+            log.info("%s — cached scores 재사용 (%d subjects)", metric_name.upper(), len(scores))
         else:
-            train_rows = df[df["TrainOrVal"] == "train"]
-            scores = {}   # subject_id → score
-            eps = 1e-6
-            n_total = len(train_rows)
+            train_rows   = df[df["TrainOrVal"] == "train"]
+            scores       = {}
+            n_total      = len(train_rows)
             log_interval = max(1, n_total // 10)
-            with torch.no_grad():
+
+            if scoring == "texture":
+                # ── texture: ROI intensity entropy (모델 추론 없음) ─────────────
+                chan_list = self.args.chan.strip("[]").split(",")
                 for i, (_, row) in enumerate(train_rows.iterrows()):
                     subj = row["Subject_ID"]
                     if i % log_interval == 0:
-                        log.info("  %s scoring — %d / %d", metric_name.upper(), i, n_total)
-                    try:
-                        imgs = []
-                        for ch in channels:
-                            path = os.path.join(self.args.data,
-                                                subj, f"{subj}_{ch}.nii.gz")
-                            imgs.append(nib.load(path).get_fdata(dtype=np.float32))
-                        x = torch.tensor(np.stack(imgs)[None]).to(device)  # (1,C,H,W,D)
-                        preds = torch.stack([torch.sigmoid(m(x)) for m in models])  # (M,1,L,H,W,D)
-                        if use_bald:
-                            # BALD = H[E_m[p]] - E_m[H[p_m]]
-                            # 모델 간 불일치가 클수록 높은 값 → inter-domain uncertainty
-                            p_mean = preds.mean(dim=0).cpu().numpy()          # (1,L,H,W,D)
-                            p_all  = preds.cpu().numpy()                       # (M,1,L,H,W,D)
-                            h_mean = -(p_mean * np.log(p_mean + eps) + (1 - p_mean) * np.log(1 - p_mean + eps))
-                            h_ind  = -(p_all  * np.log(p_all  + eps) + (1 - p_all)  * np.log(1 - p_all  + eps))
-                            score  = float((h_mean - h_ind.mean(axis=0)).mean())
-                        else:
-                            # 단일 모델: 예측 엔트로피
-                            p = preds[0].cpu().numpy()                         # (1,L,H,W,D)
-                            score = float(-(p * np.log(p + eps) + (1 - p) * np.log(1 - p + eps)).mean())
-                        scores[subj] = score
-                    except Exception as e:
-                        log.warning("  %s — %s 계산 실패: %s", subj, metric_name, e)
-                        scores[subj] = 0.0
+                        log.info("  TEXTURE scoring — %d / %d", i, n_total)
+                    scores[subj] = self._score_texture(subj, chan_list)
+            else:
+                # ── bald: committee 모델 앙상블 uncertainty ───────────────────
+                eps = 1e-6
+                with torch.no_grad():
+                    for i, (_, row) in enumerate(train_rows.iterrows()):
+                        subj = row["Subject_ID"]
+                        if i % log_interval == 0:
+                            log.info("  %s scoring — %d / %d", metric_name.upper(), i, n_total)
+                        try:
+                            imgs = []
+                            for ch in channels:
+                                path = os.path.join(self.args.data,
+                                                    subj, f"{subj}_{ch}.nii.gz")
+                                imgs.append(nib.load(path).get_fdata(dtype=np.float32))
+                            x     = torch.tensor(np.stack(imgs)[None]).to(device)
+                            preds = torch.stack([torch.sigmoid(m(x)) for m in models])
+                            if use_bald:
+                                p_mean = preds.mean(dim=0).cpu().numpy()
+                                p_all  = preds.cpu().numpy()
+                                h_mean = -(p_mean * np.log(p_mean + eps) + (1 - p_mean) * np.log(1 - p_mean + eps))
+                                h_ind  = -(p_all  * np.log(p_all  + eps) + (1 - p_all)  * np.log(1 - p_all  + eps))
+                                score  = float((h_mean - h_ind.mean(axis=0)).mean())
+                            else:
+                                p     = preds[0].cpu().numpy()
+                                score = float(-(p * np.log(p + eps) + (1 - p) * np.log(1 - p + eps)).mean())
+                            scores[subj] = score
+                        except Exception as e:
+                            log.warning("  %s — %s 계산 실패: %s", subj, metric_name, e)
+                            scores[subj] = 0.0
 
-        # anti_entropy: 하위 k (lowest BALD), 그 외: 상위 k (highest BALD)
+        # anti_entropy: 하위 k, 그 외: 상위 k
         descending = (self.args.selection != "anti_entropy")
-        ranked = sorted(scores, key=scores.__getitem__, reverse=descending)
+        ranked   = sorted(scores, key=scores.__getitem__, reverse=descending)
         selected = set(ranked[:k])
         if ranked:
             log.info("%s range — top=%.4f  k-th=%.4f  bottom=%.4f", metric_name.upper(),
@@ -672,6 +729,7 @@ def main():
     parser.add_argument("--sampling-rate",  type=float, default=1.0,            help="train subjects 샘플링 비율 (0.0~1.0)")
     parser.add_argument("--sampling-mode",  default="static",                   help="샘플링 모드 (static / dynamic / pool)")
     parser.add_argument("--selection",      default="random",                   help="subject 선택 방식 (random / entropy / anti_entropy)")
+    parser.add_argument("--scoring",        default="bald",                     help="entropy 계열 선택 시 점수 계산 방식 (bald / texture)")
     parser.add_argument("--committee",            default="",    help="entropy 선택용 모델 경로 (.pt 또는 폴더, 콤마 구분 복수 경로)")
     parser.add_argument("--committee-job",        default="",    help="committee job 이름 — 체크포인트 구조에서 자동 경로 생성 시 사용")
     parser.add_argument("--committee-rounds",     type=int, default=1, help="committee job의 총 라운드 수")
