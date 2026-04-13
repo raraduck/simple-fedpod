@@ -184,10 +184,10 @@ class Aggregator:
     # ── Split CSV 초기화 (dry-run) ──────────────────────────────────────────
     def _sample_train(self, df, col):
         """전체 기관의 원본 train 수로 공통 λ를 정하고, 기관별로 Poisson(λ) 샘플링.
-        pool 컬럼이 있으면 pool=1 subject만 샘플링 대상으로 제한하되 λ는 원본 수 기준."""
+        pool 컬럼이 있으면 pool=1 subject만 샘플링 대상으로 제한하되 λ는 원본 수 기준.
+        rate=1.0 시 λ = mean(ALL_n) ≥ pool_i (pool은 rate=1.0 기준 생성) → clip이 pool 전체 선택 보장."""
         has_pool = "pool" in df.columns
         partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].unique())
-        # λ: 원본 train 보유량 기준 (pool 마스킹 무관)
         per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
                  for p in partitions]
         lam = np.mean(per_n) * self.args.sampling_rate
@@ -225,12 +225,11 @@ class Aggregator:
             n_train_total = int((df["TrainOrVal"] == "train").sum())
             log.info("Reuse pool ← %s  (%d / %d train subjects)",
                      self.args.reuse_pool, n_pool_total, n_train_total)
-            # entropy+static: pool 전체를 R00으로
-            df["R00"] = None
-            train_idx = df[df["TrainOrVal"] == "train"].index
-            df.loc[train_idx, "R00"] = df.loc[train_idx, "pool"]
-            df["R00"] = df["R00"].astype("Int64")
-            log.info("Reuse pool — R00: %d subjects selected", n_pool_total)
+            # pool 내에서 sampling-rate 적용한 Poisson 서브샘플링 → R00
+            df = self._sample_train(df, "R00")
+            n_r00 = int((df["R00"] == 1).sum())
+            log.info("Reuse pool — R00: %d / %d pool subjects selected (sampling_rate=%.2f)",
+                     n_r00, n_pool_total, self.args.sampling_rate)
             init_split = os.path.join(self.args.ckpt_root, self.args.job, "agg", "init", "split.csv")
             os.makedirs(os.path.dirname(init_split), exist_ok=True)
             df.to_csv(init_split, index=False)
@@ -242,7 +241,9 @@ class Aggregator:
         df["Partition_ID"] = df["Partition_ID"].astype("Int64")
 
         if self.args.sampling_mode == "pool":
-            # Step 1: entropy/random으로 pool 결정 → 비선택 subject Partition_ID=NA 마스킹
+            # Step 1: pool 결정 — entropy/random 모두 rate=1.0 으로 최대 coverage
+            orig_rate = self.args.sampling_rate
+            self.args.sampling_rate = 1.0
             if self.args.selection == "entropy":
                 if not (self.args.committee or self.args.committee_job):
                     raise RuntimeError("pool+entropy dry-run에는 --committee 또는 --committee-job 이 필요합니다.")
@@ -252,6 +253,7 @@ class Aggregator:
                 df = self._sample_train_entropy(df, "_pool_tmp", models, device, channels)
             else:  # random
                 df = self._sample_train(df, "_pool_tmp")
+            self.args.sampling_rate = orig_rate
             non_pool = (df["TrainOrVal"] == "train") & (df["_pool_tmp"] == 0)
             df["pool"] = pd.NA
             df.loc[df["TrainOrVal"] == "train", "pool"] = 1
@@ -262,17 +264,11 @@ class Aggregator:
             n_train_total = int((df["TrainOrVal"] == "train").sum())
             log.info("Pool — %d / %d train subjects in pool (selection=%s)",
                     n_pool_total, n_train_total, self.args.selection)
-            # Step 2: R00 컬럼 생성
-            # entropy+static: pool 전체를 학습 대상으로 사용 (Poisson sub-sampling 없음)
-            # random: pool 내에서 per-partition Poisson 샘플링
-            if self.args.selection == "entropy":
-                df["R00"] = None
-                train_idx = df[df["TrainOrVal"] == "train"].index
-                df.loc[train_idx, "R00"] = df.loc[train_idx, "pool"]
-                df["R00"] = df["R00"].astype("Int64")
-                log.info("Entropy+static — R00: all %d pool subjects selected (no Poisson sub-sampling)", n_pool_total)
-            else:
-                df = self._sample_train(df, "R00")
+            # Step 2: R00 — pool 내에서 sampling_rate 적용한 Poisson 서브샘플링
+            df = self._sample_train(df, "R00")
+            n_r00 = int((df["R00"] == 1).sum())
+            log.info("Pool R00 — %d / %d pool subjects selected (sampling_rate=%.2f)",
+                     n_r00, n_pool_total, self.args.sampling_rate)
         else:
             # static / dynamic 공통 기본 흐름
             if self.args.selection == "entropy":
