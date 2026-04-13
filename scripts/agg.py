@@ -184,7 +184,8 @@ class Aggregator:
     # ── Split CSV 초기화 (dry-run) ──────────────────────────────────────────
     def _sample_train(self, df, col):
         """전체 기관의 원본 train 수로 공통 λ를 정하고, 기관별로 Poisson(λ) 샘플링.
-        pool 컬럼이 있으면 pool=1 subject만 샘플링 대상으로 제한하되 λ는 원본 수 기준.
+        pool 컬럼이 있으면 pool>0 subject만 샘플링 대상으로 제한하되 λ는 원본 수 기준.
+        pool 값은 0(비선택) 또는 양수(순위 또는 단순 1) 모두 허용.
         rate=1.0 시 λ = mean(ALL_n) ≥ pool_i (pool은 rate=1.0 기준 생성) → clip이 pool 전체 선택 보장."""
         has_pool = "pool" in df.columns
         partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].unique())
@@ -197,8 +198,8 @@ class Aggregator:
         df[col] = None
         for p, n_total in zip(partitions, per_n):
             if has_pool:
-                pool_idx   = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train") & (df["pool"] == 1)].index
-                nopool_idx = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train") & (df["pool"] != 1)].index
+                pool_idx   = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train") & (df["pool"] > 0)].index
+                nopool_idx = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train") & (df["pool"] <= 0)].index
                 df.loc[nopool_idx, col] = 0
             else:
                 pool_idx = df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")].index
@@ -221,22 +222,38 @@ class Aggregator:
             df = src[["Partition_ID", "Subject_ID", "TrainOrVal", "pool"]].copy()
             df["Partition_ID"] = df["Partition_ID"].astype("Int64")
             df["pool"] = df["pool"].astype("Int64")
-            n_pool_total  = int((df["pool"] == 1).sum())
+            n_pool_total  = int((df["pool"] > 0).sum())
             n_train_total = int((df["TrainOrVal"] == "train").sum())
             log.info("Reuse pool ← %s  (%d / %d train subjects)",
                      self.args.reuse_pool, n_pool_total, n_train_total)
-            # pool 내에서 sampling-rate 서브샘플링 → R00
-            #   entropy/anti_entropy: global BALD 순위 기반 k-cut
-            #   random: per-partition Poisson(λ) within pool
+            # pool 재사용 시 R00 서브샘플링
+            #   entropy/anti_entropy: pool 컬럼 순위(1=최고) 기준 global top-k k-cut
+            #                         — 모델 로드/추론 전혀 없음
+            #   random: pool 내 per-partition Poisson(λ)
             if self.args.selection in ("entropy", "anti_entropy"):
-                if not (self.args.committee or self.args.committee_job):
-                    log.warning("--selection %s 이지만 --committee 미지정 → random으로 대체", self.args.selection)
-                    df = self._sample_train(df, "R00")
-                else:
-                    device   = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
-                    models   = self._build_committee(device)
-                    channels = self.args.committee_chan.strip("[]").split(",")
-                    df, _    = self._sample_train_entropy(df, "R00", models, device, channels)
+                pool_max = int(df.loc[df["TrainOrVal"] == "train", "pool"].max(skipna=True))
+                if pool_max <= 1:
+                    raise ValueError(
+                        "reuse-pool CSV의 pool 컬럼에 BALD 순위가 없습니다 (max=1). "
+                        "entropy/anti_entropy selection으로 생성된 CSV를 사용하세요."
+                    )
+                partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].dropna().unique())
+                per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
+                         for p in partitions]
+                lam = np.mean(per_n) * self.args.sampling_rate
+                k   = int(sum(int(np.clip(round(lam), 1, n)) for n in per_n))
+                # pool 컬럼: 1=최고 BALD, N=최저 BALD
+                #   entropy    → 오름차순 head(k): top-k (최고 BALD)
+                #   anti_entropy → 내림차순 head(k): bottom-k (최저 BALD)
+                ascending = (self.args.selection == "entropy")
+                pool_rows = df[df["TrainOrVal"] == "train"].sort_values("pool", ascending=ascending)
+                selected  = set(pool_rows.head(k)["Subject_ID"])
+                train_idx = df[df["TrainOrVal"] == "train"].index
+                df.loc[train_idx, "R00"] = df.loc[train_idx, "Subject_ID"].map(
+                    lambda s: 1 if s in selected else 0)
+                df["R00"] = df["R00"].astype("Int64")
+                log.info("Reuse pool %s — λ=%.2f  global k=%d  selected=%d",
+                         self.args.selection, lam, k, len(selected))
             else:
                 df = self._sample_train(df, "R00")
             n_r00 = int((df["R00"] == 1).sum())
@@ -253,42 +270,59 @@ class Aggregator:
         df["Partition_ID"] = df["Partition_ID"].astype("Int64")
 
         if self.args.sampling_mode == "pool":
-            # Step 1: pool 결정 — entropy/random 모두 rate=1.0 으로 최대 coverage
-            orig_rate = self.args.sampling_rate
-            self.args.sampling_rate = 1.0
             if self.args.selection in ("entropy", "anti_entropy"):
+                # ── entropy/anti_entropy: 전체 train subject BALD 추론 → 전체 순위 기록 ──
+                # pool 컬럼 = 전체 N개 train subject의 global BALD 순위 (1=최고 BALD, N=최저)
+                # reuse-pool 시 별도 파일 없이 정렬만으로 top-k(entropy) / bottom-k(anti_entropy) k-cut
                 if not (self.args.committee or self.args.committee_job):
                     raise RuntimeError("pool+entropy/anti_entropy dry-run에는 --committee 또는 --committee-job 이 필요합니다.")
                 device = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
                 models = self._build_committee(device)
                 channels = self.args.committee_chan.strip("[]").split(",")
+                # rate=1.0 으로 호출해도 _pool_tmp 결과는 버리고 pool_scores(전체) 만 사용
+                orig_rate = self.args.sampling_rate
+                self.args.sampling_rate = 1.0
                 df, pool_scores = self._sample_train_entropy(df, "_pool_tmp", models, device, channels)
-            else:  # random
-                df = self._sample_train(df, "_pool_tmp")
-                pool_scores = None
-            self.args.sampling_rate = orig_rate
-            non_pool = (df["TrainOrVal"] == "train") & (df["_pool_tmp"] == 0)
-            df["pool"] = pd.NA
-            df.loc[df["TrainOrVal"] == "train", "pool"] = 1
-            df.loc[non_pool, "pool"] = 0
-            df["pool"] = df["pool"].astype("Int64")
-            df = df.drop(columns=["_pool_tmp"])
-            n_pool_total = int((df["pool"] == 1).sum())
-            n_train_total = int((df["TrainOrVal"] == "train").sum())
-            log.info("Pool — %d / %d train subjects in pool (selection=%s)",
-                    n_pool_total, n_train_total, self.args.selection)
-            # Step 2: R00 — actual sampling_rate 로 서브샘플링
-            #   entropy/anti_entropy: global BALD 순위 기반 top-k (pool_scores 재사용, 재추론 없음)
-            #                        → Poisson per-partition 대신 순위 기반 k-cut으로 불균일 분포 방지
-            #   random: pool 내 per-partition Poisson(λ)
-            if self.args.selection in ("entropy", "anti_entropy"):
+                self.args.sampling_rate = orig_rate
+                df = df.drop(columns=["_pool_tmp"])
+                # 전체 train subject에 BALD 순위 부여 (1=최고 BALD, N=최저 BALD)
+                df["pool"] = pd.NA
+                train_idx = df[df["TrainOrVal"] == "train"].index
+                sorted_idx = sorted(train_idx,
+                                    key=lambda i: pool_scores.get(df.loc[i, "Subject_ID"], 0),
+                                    reverse=True)   # 항상 내림차순: rank 1 = 최고 BALD
+                for rank, i in enumerate(sorted_idx, start=1):
+                    df.loc[i, "pool"] = rank
+                df["pool"] = df["pool"].astype("Int64")
+                n_train_total = len(train_idx)
+                log.info("Pool — %d train subjects ranked by BALD (selection=%s, 1=highest)",
+                         n_train_total, self.args.selection)
+                # R00 — k-cut: entropy=top-k(rank 1..k), anti_entropy=bottom-k(rank N-k+1..N)
                 df, _ = self._sample_train_entropy(df, "R00", models, device, channels,
                                                    cached_scores=pool_scores)
+                n_r00 = int((df["R00"] == 1).sum())
+                log.info("Pool R00 — %d / %d subjects selected (selection=%s, sampling_rate=%.2f)",
+                         n_r00, n_train_total, self.args.selection, self.args.sampling_rate)
             else:
+                # ── random: rate=1.0 으로 pool subset 선택 (pool=1/0) ──
+                orig_rate = self.args.sampling_rate
+                self.args.sampling_rate = 1.0
+                df = self._sample_train(df, "_pool_tmp")
+                self.args.sampling_rate = orig_rate
+                non_pool = (df["TrainOrVal"] == "train") & (df["_pool_tmp"] == 0)
+                df["pool"] = pd.NA
+                df.loc[df["TrainOrVal"] == "train", "pool"] = 1
+                df.loc[non_pool, "pool"] = 0
+                df["pool"] = df["pool"].astype("Int64")
+                df = df.drop(columns=["_pool_tmp"])
+                n_pool_total = int((df["pool"] > 0).sum())
+                n_train_total = int((df["TrainOrVal"] == "train").sum())
+                log.info("Pool — %d / %d train subjects in pool (random)",
+                         n_pool_total, n_train_total)
                 df = self._sample_train(df, "R00")
-            n_r00 = int((df["R00"] == 1).sum())
-            log.info("Pool R00 — %d / %d pool subjects selected (selection=%s, sampling_rate=%.2f)",
-                     n_r00, n_pool_total, self.args.selection, self.args.sampling_rate)
+                n_r00 = int((df["R00"] == 1).sum())
+                log.info("Pool R00 — %d / %d pool subjects selected (random, sampling_rate=%.2f)",
+                         n_r00, n_pool_total, self.args.sampling_rate)
         else:
             # static / dynamic 공통 기본 흐름
             if self.args.selection in ("entropy", "anti_entropy"):
@@ -421,10 +455,11 @@ class Aggregator:
         lam = np.mean(per_n) * self.args.sampling_rate
         # global top-k: 파티션별 min(round(λ), n_i) 합산
         k = int(sum(int(np.clip(round(lam), 1, n)) for n in per_n))
-        use_bald = len(models) > 1
+        use_bald = (models is not None and len(models) > 1)
         metric_name = "BALD" if use_bald else "entropy"
+        n_committee = len(models) if models is not None else 0
         log.info("%s selection — committee=%d  λ=%.2f  global k=%d  (total train=%d)",
-                 metric_name.upper(), len(models), lam, k, sum(per_n))
+                 metric_name.upper(), n_committee, lam, k, sum(per_n))
 
         if cached_scores is not None:
             scores = cached_scores
