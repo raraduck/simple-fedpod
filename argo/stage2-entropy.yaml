@@ -35,6 +35,8 @@ spec:
       value: "/runs"
     - name: selection
       value: "entropy"
+    - name: scoring
+      value: "bald"
     - name: agg-sampling-mode
       value: "static"
     - name: algorithm
@@ -1601,6 +1603,8 @@ spec:
       - "pool"
       - "--selection"
       - "{{workflow.parameters.selection}}"
+      - "--scoring"
+      - "{{workflow.parameters.scoring}}"
       - "--in-ch"
       - "5"
       - "--out-classes"
