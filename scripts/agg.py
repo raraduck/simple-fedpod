@@ -608,8 +608,8 @@ class Aggregator:
             return self._fedavg(state_dicts)
         if self.args.algorithm == "fedwavg":
             return self._fedwavg(state_dicts, n_trains)
-        if self.args.algorithm == "fedpid":
-            return self._fedpid(state_dicts, metrics_list, part_ids)
+        if self.args.algorithm == "fedpod":
+            return self._fedpod(state_dicts, metrics_list, part_ids)
         raise ValueError(f"지원하지 않는 알고리즘: {self.args.algorithm}")
 
     def _fedavg(self, state_dicts):
@@ -630,76 +630,76 @@ class Aggregator:
             avg[key] = sum(w * sd[key].float() for w, sd in zip(weights, state_dicts))
         return avg
 
-    def _fedpid(self, state_dicts, metrics_list, part_ids):
-        kp = self.args.pid_kp
-        ki = self.args.pid_ki
-        kd = self.args.pid_kd
+    def _fedpod(self, state_dicts, metrics_list, part_ids):
+        kp = self.args.pod_kp
+        ki = self.args.pod_ki
+        kd = self.args.pod_kd
 
-        # 이전 라운드 PID state 로드 (I항, prev_error)
-        pid_state = self._load_pid_state()
-        integrals   = pid_state.get("integrals",   {})
-        prev_errors = pid_state.get("prev_errors", {})
+        # 이전 라운드 POD state 로드 (I항)
+        pod_state = self._load_pod_state()
+        integrals = pod_state.get("integrals", {})
 
-        pid_values = []
+        pod_values = []
         for m, p in zip(metrics_list, part_ids):
             key = str(p)
+            n_train = m.get("n_train", 1)
             prv = m.get("prv_val_loss", 0.0)
             pst = m.get("pst_val_loss", prv)   # pst 없으면 개선량=0
-            error = prv - pst                   # 양수 = 개선
+            improvement = max(0.0, prv - pst)   # 양수 = 개선 (음수 클램프)
+            area        = (prv + pst) / 2       # 라운드 내 손실 밑넓이 (사다리꼴)
 
-            integral    = integrals.get(key, 0.0)   + ki * error
-            prev_error  = prev_errors.get(key, 0.0)
-            derivative  = kd * (error - prev_error)
+            proportional = kp * n_train         # P: 학습 데이터 수 비례
+            integral     = integrals.get(key, 0.0) + ki * area
+            derivative   = kd * improvement     # D: 라운드 내 개선량 (≥0)
 
-            pid = kp * error + integral + derivative
-            pid_values.append(pid)
+            pod = proportional + integral + derivative
+            pod_values.append(pod)
 
             # state 갱신
-            integrals[key]   = integral
-            prev_errors[key] = error
+            integrals[key] = integral
 
-            log.info("  FedPID partition %2d — prv=%.4f pst=%.4f error=%.4f "
-                     "P=%.4f I=%.4f D=%.4f pid=%.4f",
-                     p, prv, pst, error,
-                     kp * error, integral, derivative, pid)
+            log.info("  FedPOD partition %2d — n_train=%d prv=%.4f pst=%.4f impr=%.4f area=%.4f "
+                     "P=%.4f I=%.4f D=%.4f pod=%.4f",
+                     p, n_train, prv, pst, improvement, area,
+                     proportional, integral, derivative, pod)
 
         # softmax 정규화
         import math
-        max_pid = max(pid_values)
-        exp_vals = [math.exp(v - max_pid) for v in pid_values]  # numerical stability
+        max_pod = max(pod_values)
+        exp_vals = [math.exp(v - max_pod) for v in pod_values]  # numerical stability
         total_exp = sum(exp_vals)
         weights = [e / total_exp for e in exp_vals]
-        log.info("FedPID weights: %s", [f"{w:.4f}" for w in weights])
+        log.info("FedPOD weights: %s", [f"{w:.4f}" for w in weights])
 
-        # PID state 저장 (다음 라운드 사용)
-        self._save_pid_state({"integrals": integrals, "prev_errors": prev_errors})
+        # POD state 저장 (다음 라운드 사용)
+        self._save_pod_state({"integrals": integrals})
 
         avg = {}
         for key in state_dicts[0]:
             avg[key] = sum(w * sd[key].float() for w, sd in zip(weights, state_dicts))
         return avg
 
-    def _pid_state_path(self):
+    def _pod_state_path(self):
         agg_dir = os.path.dirname(self._agg_path(self.args.round))
-        return os.path.join(agg_dir, "pid_state.json")
+        return os.path.join(agg_dir, "pod_state.json")
 
-    def _load_pid_state(self):
+    def _load_pod_state(self):
         if self.args.round == 0:
             return {}
         prev_agg_dir = os.path.dirname(self._agg_path(self.args.round - 1))
-        path = os.path.join(prev_agg_dir, "pid_state.json")
+        path = os.path.join(prev_agg_dir, "pod_state.json")
         if not os.path.exists(path):
-            log.warning("FedPID — 이전 라운드 pid_state.json 없음, 초기화합니다: %s", path)
+            log.warning("FedPOD — 이전 라운드 pod_state.json 없음, 초기화합니다: %s", path)
             return {}
         with open(path) as f:
             return json.load(f)
 
-    def _save_pid_state(self, state):
-        path = self._pid_state_path()
+    def _save_pod_state(self, state):
+        path = self._pod_state_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump(state, f, indent=2)
-        log.info("FedPID state saved → %s", path)
+        log.info("FedPOD state saved → %s", path)
 
     def _write_output(self, name, value):
         out_dir = "/tmp/outputs"
@@ -741,10 +741,10 @@ def main():
     parser.add_argument("--reuse-pool",            default="",                            help="pool 재사용 — 이전 실험 split.csv 경로 (pool 컬럼 필요, entropy inference 스킵)")
     parser.add_argument("-D", "--data",     default="/data/fets128/trainval",    help="데이터 경로 (entropy 선택 시 추론에 사용)")
     parser.add_argument("--chan",           default="[t1,t1ce,t2,flair]",        help="입력 채널 (entropy 추론용)")
-    parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg / fedwavg / fedpid)")
-    parser.add_argument("--pid-kp",         type=float, default=1.0,            help="FedPID — proportional gain")
-    parser.add_argument("--pid-ki",         type=float, default=0.1,            help="FedPID — integral gain")
-    parser.add_argument("--pid-kd",         type=float, default=0.0,            help="FedPID — derivative gain")
+    parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg / fedwavg / fedpod)")
+    parser.add_argument("--pod-kp",         type=float, default=1.0,            help="FedPOD — proportional gain")
+    parser.add_argument("--pod-ki",         type=float, default=0.1,            help="FedPOD — integral gain")
+    parser.add_argument("--pod-kd",         type=float, default=0.0,            help="FedPOD — derivative gain")
     parser.add_argument("-J", "--job",      default="stage1",                   help="job 이름 (e.g. stage1 → stage1-p01, stage1/agg/)")
     parser.add_argument("--partitions",     default="",                         help="집계할 partition ID 목록 (콤마 구분, e.g. '1,2,5')")
     parser.add_argument("--ckpt-root",      default="/checkpoints",             help="체크포인트 루트 경로")

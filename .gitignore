@@ -8,4 +8,4 @@ checkpoints/*
 runs/*
 !runs/.gitkeep
 sample
-runs-temp
+runs-*
