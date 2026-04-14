@@ -15,28 +15,28 @@ run() {
 run "fedwavg-random" stage2-random.yaml \
     -p job=stage2-p2-v8-fedwavg-random-0 -p selection=random \
     -p epochs=3 -p algorithm=fedwavg -p sampling-rate=0.2 \
-    -p lr-scheduler=cosine \
+    -p lr-scheduler=linear \
     -p reuse-pool="$REUSE_POOL"
 
 run "fedpod-random" stage2-random.yaml \
     -p job=stage2-p2-v8-fedpod-random-0 -p selection=random \
     -p epochs=3 -p algorithm=fedpod -p sampling-rate=0.2 \
     -p kp=0.45 -p ki=0.1 -p kd=0.45 \
-    -p lr-scheduler=cosine \
+    -p lr-scheduler=linear \
     -p reuse-pool="$REUSE_POOL"
 
 run "fedpid-random" stage2-random.yaml \
     -p job=stage2-p2-v8-fedpid-random-0 -p selection=random \
     -p epochs=3 -p algorithm=fedpid -p sampling-rate=0.2 \
     -p kp=0.45 -p ki=0.1 -p kd=0.45 \
-    -p lr-scheduler=cosine \
+    -p lr-scheduler=linear \
     -p reuse-pool="$REUSE_POOL"
 
 run "fedwavg-anti-entropy" stage2-entropy.yaml \
     -p job=stage2-p2-v8-fedwavg-anti-entropy-0 -p selection=anti_entropy \
     -p epochs=3 -p algorithm=fedwavg -p sampling-rate=0.2 \
     -p committee-job=stage1-v2 \
-    -p lr-scheduler=cosine \
+    -p lr-scheduler=linear \
     -p reuse-pool="$REUSE_POOL"
 
 run "fedpod-anti-entropy" stage2-entropy.yaml \
@@ -44,7 +44,7 @@ run "fedpod-anti-entropy" stage2-entropy.yaml \
     -p epochs=3 -p algorithm=fedpod -p sampling-rate=0.2 \
     -p kp=0.45 -p ki=0.1 -p kd=0.45 \
     -p committee-job=stage1-v2 \
-    -p lr-scheduler=cosine \
+    -p lr-scheduler=linear \
     -p reuse-pool="$REUSE_POOL"
 
 run "fedpid-anti-entropy" stage2-entropy.yaml \
@@ -52,20 +52,20 @@ run "fedpid-anti-entropy" stage2-entropy.yaml \
     -p epochs=3 -p algorithm=fedpid -p sampling-rate=0.2 \
     -p kp=0.45 -p ki=0.1 -p kd=0.45 \
     -p committee-job=stage1-v2 \
-    -p lr-scheduler=cosine \
+    -p lr-scheduler=linear \
     -p reuse-pool="$REUSE_POOL"
 
 run "fedbn-random" stage2-random.yaml \
     -p job=stage2-p2-v8-fedbn-random-0 -p selection=random \
     -p epochs=3 -p algorithm=fedbn -p sampling-rate=0.2 \
-    -p lr-scheduler=cosine \
+    -p lr-scheduler=linear \
     -p reuse-pool="$REUSE_POOL"
 
 run "fedbn-anti-entropy" stage2-entropy.yaml \
     -p job=stage2-p2-v8-fedbn-anti-entropy-0 -p selection=anti_entropy \
     -p epochs=3 -p algorithm=fedbn -p sampling-rate=0.2 \
     -p committee-job=stage1-v2 \
-    -p lr-scheduler=cosine \
+    -p lr-scheduler=linear \
     -p reuse-pool="$REUSE_POOL"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] 전체 완료"

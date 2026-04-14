@@ -10,13 +10,13 @@ log = logging.getLogger(__name__)
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader, lr, device, ckpt_dir, epoch_offset=0, lnam=None,
-                 scheduler_type="none", lr_t_max=100, lr_step_size=5, lr_gamma=0.5):
+                 scheduler_type="none", lr_t_max=100, lr_step_size=5, lr_gamma=0.5, lr_end_factor=0.1):
         self.model        = model
         self.train_loader = train_loader
         self.val_loader   = val_loader
         self.device       = device
         self.optimizer    = torch.optim.Adam(model.parameters(), lr=lr)
-        self.scheduler    = self._make_scheduler(scheduler_type, lr_t_max, lr_step_size, lr_gamma)
+        self.scheduler    = self._make_scheduler(scheduler_type, lr_t_max, lr_step_size, lr_gamma, lr_end_factor, epoch_offset)
         self.criterion    = SoftDiceBCEWithLogitsLoss()
         self.ckpt_dir     = ckpt_dir
         self.best_val     = float("inf")
@@ -26,11 +26,15 @@ class Trainer:
         os.makedirs(ckpt_dir, exist_ok=True)
         self._auto_resume()  # round 내 재시작 (있으면 덮어씀)
 
-    def _make_scheduler(self, scheduler_type, t_max, step_size, gamma):
-        if scheduler_type == "cosine":
-            return torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=t_max)
+    def _make_scheduler(self, scheduler_type, t_max, step_size, gamma, end_factor, last_epoch=0):
+        le = last_epoch - 1 if last_epoch > 0 else -1
+        if scheduler_type == "linear":
+            return torch.optim.lr_scheduler.LinearLR(
+                self.optimizer, start_factor=1.0, end_factor=end_factor,
+                total_iters=t_max, last_epoch=le)
         if scheduler_type == "step":
-            return torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=step_size, gamma=gamma)
+            return torch.optim.lr_scheduler.StepLR(
+                self.optimizer, step_size=step_size, gamma=gamma, last_epoch=le)
         return None
 
     def _auto_resume(self):

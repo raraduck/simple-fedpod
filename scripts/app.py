@@ -112,7 +112,8 @@ class App:
                           scheduler_type=self.args.lr_scheduler,
                           lr_t_max=lr_t_max,
                           lr_step_size=self.args.lr_step_size,
-                          lr_gamma=self.args.lr_gamma)
+                          lr_gamma=self.args.lr_gamma,
+                          lr_end_factor=self.args.lr_end_factor)
 
         prv_val  = trainer.eval()
         prv_dice = trainer.eval_dice()
@@ -216,8 +217,9 @@ def main():
     # Training
     parser.add_argument("--batch",           type=int,   default=1,                                  help="배치 크기")
     parser.add_argument("--lr",              type=float, default=1e-3,                               help="학습률")
-    parser.add_argument("--lr-scheduler",   default="none",                                         help="LR 스케줄러 (none / cosine / step)")
-    parser.add_argument("--lr-t-max",       type=int,   default=0,                                  help="cosine T_max (0=rounds×epochs)")
+    parser.add_argument("--lr-scheduler",   default="none",                                         help="LR 스케줄러 (none / linear / step)")
+    parser.add_argument("--lr-t-max",       type=int,   default=0,                                  help="linear/cosine total_iters/T_max (0=rounds×epochs)")
+    parser.add_argument("--lr-end-factor",  type=float, default=0.1,                                help="linear 스케줄러 — 최종 lr 비율 (기본 0.1 = lr×0.1)")
     parser.add_argument("--lr-step-size",   type=int,   default=5,                                  help="step 스케줄러 — N 에폭마다 감소")
     parser.add_argument("--lr-gamma",       type=float, default=0.5,                                help="step 스케줄러 — 감소 비율")
     parser.add_argument("--gpu",             type=int,   default=1,                                  help="GPU 사용 여부 (1/0)")
