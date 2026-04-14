@@ -19,6 +19,8 @@ spec:
       value: "stage2"
     - name: epochs
       value: "3"
+    - name: lr-scheduler
+      value: "none"
     - name: data-path
       value: "/data/fets128/trainval"
     - name: ckpt-root
@@ -1634,6 +1636,8 @@ spec:
       - "20"
       - "--epochs"
       - "{{workflow.parameters.epochs}}"
+      - "--lr-scheduler"
+      - "{{workflow.parameters.lr-scheduler}}"
       - "--init-ckpt"
       - "{{inputs.parameters.init-ckpt}}"
       - "-J"
@@ -1712,6 +1716,8 @@ spec:
       - "{{inputs.parameters.round}}"
       - "--epochs"
       - "{{workflow.parameters.epochs}}"
+      - "--lr-scheduler"
+      - "{{workflow.parameters.lr-scheduler}}"
       - "--epoch"
       - "{{inputs.parameters.epoch}}"
       - "--init-ckpt"
