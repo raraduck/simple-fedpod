@@ -96,9 +96,14 @@ class App:
                                 f"R{self.args.rounds:02d}r{self.args.round:02d}")
         os.makedirs(ckpt_dir, exist_ok=True)
         log.info("Round %d / %d  ckpt_dir=%s", self.args.round, self.args.rounds, ckpt_dir)
+        lr_t_max = self.args.lr_t_max or self.args.rounds * self.args.epochs
         trainer = Trainer(model, train_loader, val_loader,
                           lr=self.args.lr, device=device, ckpt_dir=ckpt_dir,
-                          epoch_offset=self.args.epoch, lnam=lnam)
+                          epoch_offset=self.args.epoch, lnam=lnam,
+                          scheduler_type=self.args.lr_scheduler,
+                          lr_t_max=lr_t_max,
+                          lr_step_size=self.args.lr_step_size,
+                          lr_gamma=self.args.lr_gamma)
 
         prv_val  = trainer.eval()
         prv_dice = trainer.eval_dice()
@@ -107,6 +112,7 @@ class App:
         for epoch in range(trainer.start_epoch, self.args.epoch + self.args.epochs + 1):
             trn_losses.append(trainer.train_epoch(epoch))
             val_losses.append(trainer.val_epoch(epoch))
+            trainer.scheduler_step()
 
         if trn_losses:
             pst_val      = trainer.eval()
@@ -121,6 +127,7 @@ class App:
                 "partition":    self.args.partition,
                 "round":        self.args.round,
                 "n_train":      len(train_subjects),
+                "lr":           trainer.optimizer.param_groups[0]["lr"],
                 "avg_trn_loss": round(avg_trn_loss, 6),
                 "avg_val_loss": round(avg_val_loss, 6),
                 "prv_val_loss": round(prv_val,      6),
@@ -200,6 +207,10 @@ def main():
     # Training
     parser.add_argument("--batch",           type=int,   default=1,                                  help="배치 크기")
     parser.add_argument("--lr",              type=float, default=1e-3,                               help="학습률")
+    parser.add_argument("--lr-scheduler",   default="none",                                         help="LR 스케줄러 (none / cosine / step)")
+    parser.add_argument("--lr-t-max",       type=int,   default=0,                                  help="cosine T_max (0=rounds×epochs)")
+    parser.add_argument("--lr-step-size",   type=int,   default=5,                                  help="step 스케줄러 — N 에폭마다 감소")
+    parser.add_argument("--lr-gamma",       type=float, default=0.5,                                help="step 스케줄러 — 감소 비율")
     parser.add_argument("--gpu",             type=int,   default=1,                                  help="GPU 사용 여부 (1/0)")
 
     # FL rounds

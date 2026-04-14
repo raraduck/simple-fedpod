@@ -9,12 +9,14 @@ log = logging.getLogger(__name__)
 
 
 class Trainer:
-    def __init__(self, model, train_loader, val_loader, lr, device, ckpt_dir, epoch_offset=0, lnam=None):
+    def __init__(self, model, train_loader, val_loader, lr, device, ckpt_dir, epoch_offset=0, lnam=None,
+                 scheduler_type="none", lr_t_max=100, lr_step_size=5, lr_gamma=0.5):
         self.model        = model
         self.train_loader = train_loader
         self.val_loader   = val_loader
         self.device       = device
         self.optimizer    = torch.optim.Adam(model.parameters(), lr=lr)
+        self.scheduler    = self._make_scheduler(scheduler_type, lr_t_max, lr_step_size, lr_gamma)
         self.criterion    = SoftDiceBCEWithLogitsLoss()
         self.ckpt_dir     = ckpt_dir
         self.best_val     = float("inf")
@@ -24,6 +26,13 @@ class Trainer:
         os.makedirs(ckpt_dir, exist_ok=True)
         self._auto_resume()  # round 내 재시작 (있으면 덮어씀)
 
+    def _make_scheduler(self, scheduler_type, t_max, step_size, gamma):
+        if scheduler_type == "cosine":
+            return torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=t_max)
+        if scheduler_type == "step":
+            return torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=step_size, gamma=gamma)
+        return None
+
     def _auto_resume(self):
         latest = os.path.join(self.ckpt_dir, "latest.pt")
         if not os.path.exists(latest):
@@ -31,24 +40,34 @@ class Trainer:
         ckpt = torch.load(latest, map_location=self.device)
         self.model.load_state_dict(ckpt["model"])
         self.optimizer.load_state_dict(ckpt["optimizer"])
+        if self.scheduler is not None and "scheduler" in ckpt:
+            self.scheduler.load_state_dict(ckpt["scheduler"])
         self.best_val    = ckpt.get("best_val", float("inf"))
         self.start_epoch = ckpt["epoch"] + 1
         log.info("Resumed from checkpoint — epoch %d  best_val=%.4f", ckpt["epoch"], self.best_val)
 
     def _save(self, epoch, val_loss, filename):
         path = os.path.join(self.ckpt_dir, filename)
-        torch.save({
+        ckpt = {
             "epoch":     epoch,
             "model":     self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "best_val":  self.best_val,
             "val_loss":  val_loss,
-        }, path)
+        }
+        if self.scheduler is not None:
+            ckpt["scheduler"] = self.scheduler.state_dict()
+        torch.save(ckpt, path)
 
     def _loss(self, images, labels):
         logits = self.model(images)
         bce, dsc = self.criterion(logits, labels)
         return bce + dsc.mean()
+
+    def scheduler_step(self):
+        if self.scheduler is not None:
+            self.scheduler.step()
+            log.info("LR → %.2e", self.optimizer.param_groups[0]["lr"])
 
     def train_epoch(self, epoch):
         self.model.train()

@@ -134,6 +134,7 @@ class Aggregator:
         pst_val      = _mean("pst_val_loss")
         prv_dice_avg = _mean("prv_dice_avg")
         pst_dice_avg = _mean("pst_dice_avg")
+        avg_lr       = sum(m["lr"] for m in metrics_list if "lr" in m) / max(1, sum(1 for m in metrics_list if "lr" in m))
 
         lnam     = list(metrics_list[0]["prv_dice"].keys())
         prv_dice = {n: sum(m["prv_dice"][n] for m in metrics_list) / len(metrics_list) for n in lnam}
@@ -176,6 +177,8 @@ class Aggregator:
                 writer.add_scalar(f"ech_val_dice_pst/{name}",    pst_dice[name], epoch_end)
                 writer.add_scalar(f"ech_val_dice_prvpst/{name}", prv_dice[name], epoch_start)
                 writer.add_scalar(f"ech_val_dice_prvpst/{name}", pst_dice[name], epoch_end)
+            # meta
+            writer.add_scalar("rnd_meta/lr", avg_lr, r)
 
         log.info("inst_avg TensorBoard — round=%d  n=%d  prv_loss=%.4f  pst_loss=%.4f"
                  "  prv_dice=%.4f  pst_dice=%.4f",
