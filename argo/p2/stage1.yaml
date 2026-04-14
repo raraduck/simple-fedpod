@@ -1,0 +1,956 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: fedpod-stage1-
+  namespace: dwnkim
+spec:
+  entrypoint: stage1
+  serviceAccountName: default
+  podGC:
+    strategy: OnPodCompletion
+
+  # ── 공통 파라미터 ──────────────────────────────────────────────────────────
+  arguments:
+    parameters:
+    - name: image
+      value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.3"
+    - name: job
+      value: "stage1"
+    - name: epochs
+      value: "10"
+    - name: rounds
+      value: "5"
+    - name: data-path
+      value: "/data/fets128/trainval"
+    - name: ckpt-root
+      value: "/checkpoints"
+    - name: runs-root
+      value: "/runs"
+
+  volumes:
+  - name: app-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/scripts
+      readOnly: true
+  - name: data-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/data
+      readOnly: true
+  - name: experiments-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/experiments
+      readOnly: true
+  - name: checkpoints-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/checkpoints
+      readOnly: false
+  - name: runs-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/runs
+      readOnly: false
+  - name: dshm
+    emptyDir:
+      medium: Memory
+      sizeLimit: 8Gi
+
+  templates:
+
+  # ── DAG ───────────────────────────────────────────────────────────────────
+  # rounds=5, epochs=4, partitions=1..33
+  # stage1 FL 규칙: 각 기관이 자신의 이전 라운드 latest.pt 에서 이어서 학습 (오버피팅 회피)
+  # (글로벌 agg.pt 미사용 — committee 모델 생성 목적)
+  # epoch offset: r0=0, r1=4, r2=8, r3=12, r4=16
+  - name: stage1
+    dag:
+      tasks:
+
+      # dry-run: init 모델 + R00 split CSV 생성
+      - name: dry-run
+        template: dry-run-job
+
+      # ── Round 0 ───────────────────────────────────────────────────────────
+      - name: train-r0
+        template: train-job-r0
+        dependencies: [dry-run]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+        withItems:
+        - { partition: "1"  }
+        - { partition: "2"  }
+        - { partition: "3"  }
+        - { partition: "4"  }
+        - { partition: "5"  }
+        - { partition: "6"  }
+        - { partition: "7"  }
+        - { partition: "8"  }
+        - { partition: "9"  }
+        - { partition: "10" }
+        - { partition: "11" }
+        - { partition: "12" }
+        - { partition: "13" }
+        - { partition: "14" }
+        - { partition: "15" }
+        - { partition: "16" }
+        - { partition: "17" }
+        - { partition: "18" }
+        - { partition: "19" }
+        - { partition: "20" }
+        - { partition: "21" }
+        - { partition: "22" }
+        - { partition: "23" }
+        - { partition: "24" }
+        - { partition: "25" }
+        - { partition: "26" }
+        - { partition: "27" }
+        - { partition: "28" }
+        - { partition: "29" }
+        - { partition: "30" }
+        - { partition: "31" }
+        - { partition: "32" }
+        - { partition: "33" }
+
+      - name: agg-r0
+        template: agg-job
+        dependencies: [train-r0]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{tasks.dry-run.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.dry-run.outputs.parameters.next-round}}"
+
+      - name: eval-r0
+        template: eval-job
+        dependencies: [train-r0]
+        arguments:
+          parameters:
+          - name: inst
+            value: "{{item.inst}}"
+          - name: split-csv
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
+          - name: round
+            value: "0"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r00/best.pt"
+        withItems:
+        - { inst: "01" }
+        - { inst: "02" }
+        - { inst: "03" }
+        - { inst: "04" }
+        - { inst: "05" }
+        - { inst: "06" }
+        - { inst: "07" }
+        - { inst: "08" }
+        - { inst: "09" }
+        - { inst: "10" }
+        - { inst: "11" }
+        - { inst: "12" }
+        - { inst: "13" }
+        - { inst: "14" }
+        - { inst: "15" }
+        - { inst: "16" }
+        - { inst: "17" }
+        - { inst: "18" }
+        - { inst: "19" }
+        - { inst: "20" }
+        - { inst: "21" }
+        - { inst: "22" }
+        - { inst: "23" }
+        - { inst: "24" }
+        - { inst: "25" }
+        - { inst: "26" }
+        - { inst: "27" }
+        - { inst: "28" }
+        - { inst: "29" }
+        - { inst: "30" }
+        - { inst: "31" }
+        - { inst: "32" }
+        - { inst: "33" }
+
+      # ── Round 1 ───────────────────────────────────────────────────────────
+      - name: train-r1
+        template: train-job
+        dependencies: [agg-r0]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{tasks.agg-r0.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r0.outputs.parameters.next-round}}"
+          - name: epoch
+            value: "{{tasks.agg-r0.outputs.parameters.next-epoch}}"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r00/latest.pt"
+        withItems:
+        - { partition: "1",  inst: "01" }
+        - { partition: "2",  inst: "02" }
+        - { partition: "3",  inst: "03" }
+        - { partition: "4",  inst: "04" }
+        - { partition: "5",  inst: "05" }
+        - { partition: "6",  inst: "06" }
+        - { partition: "7",  inst: "07" }
+        - { partition: "8",  inst: "08" }
+        - { partition: "9",  inst: "09" }
+        - { partition: "10", inst: "10" }
+        - { partition: "11", inst: "11" }
+        - { partition: "12", inst: "12" }
+        - { partition: "13", inst: "13" }
+        - { partition: "14", inst: "14" }
+        - { partition: "15", inst: "15" }
+        - { partition: "16", inst: "16" }
+        - { partition: "17", inst: "17" }
+        - { partition: "18", inst: "18" }
+        - { partition: "19", inst: "19" }
+        - { partition: "20", inst: "20" }
+        - { partition: "21", inst: "21" }
+        - { partition: "22", inst: "22" }
+        - { partition: "23", inst: "23" }
+        - { partition: "24", inst: "24" }
+        - { partition: "25", inst: "25" }
+        - { partition: "26", inst: "26" }
+        - { partition: "27", inst: "27" }
+        - { partition: "28", inst: "28" }
+        - { partition: "29", inst: "29" }
+        - { partition: "30", inst: "30" }
+        - { partition: "31", inst: "31" }
+        - { partition: "32", inst: "32" }
+        - { partition: "33", inst: "33" }
+
+      - name: agg-r1
+        template: agg-job
+        dependencies: [train-r1]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{tasks.agg-r0.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r0.outputs.parameters.next-round}}"
+
+      - name: eval-r1
+        template: eval-job
+        dependencies: [train-r1]
+        arguments:
+          parameters:
+          - name: inst
+            value: "{{item.inst}}"
+          - name: split-csv
+            value: "{{tasks.agg-r0.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r0.outputs.parameters.next-round}}"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r01/best.pt"
+        withItems:
+        - { inst: "01" }
+        - { inst: "02" }
+        - { inst: "03" }
+        - { inst: "04" }
+        - { inst: "05" }
+        - { inst: "06" }
+        - { inst: "07" }
+        - { inst: "08" }
+        - { inst: "09" }
+        - { inst: "10" }
+        - { inst: "11" }
+        - { inst: "12" }
+        - { inst: "13" }
+        - { inst: "14" }
+        - { inst: "15" }
+        - { inst: "16" }
+        - { inst: "17" }
+        - { inst: "18" }
+        - { inst: "19" }
+        - { inst: "20" }
+        - { inst: "21" }
+        - { inst: "22" }
+        - { inst: "23" }
+        - { inst: "24" }
+        - { inst: "25" }
+        - { inst: "26" }
+        - { inst: "27" }
+        - { inst: "28" }
+        - { inst: "29" }
+        - { inst: "30" }
+        - { inst: "31" }
+        - { inst: "32" }
+        - { inst: "33" }
+
+      # ── Round 2 ───────────────────────────────────────────────────────────
+      - name: train-r2
+        template: train-job
+        dependencies: [agg-r1]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{tasks.agg-r1.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r1.outputs.parameters.next-round}}"
+          - name: epoch
+            value: "{{tasks.agg-r1.outputs.parameters.next-epoch}}"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r01/latest.pt"
+        withItems:
+        - { partition: "1",  inst: "01" }
+        - { partition: "2",  inst: "02" }
+        - { partition: "3",  inst: "03" }
+        - { partition: "4",  inst: "04" }
+        - { partition: "5",  inst: "05" }
+        - { partition: "6",  inst: "06" }
+        - { partition: "7",  inst: "07" }
+        - { partition: "8",  inst: "08" }
+        - { partition: "9",  inst: "09" }
+        - { partition: "10", inst: "10" }
+        - { partition: "11", inst: "11" }
+        - { partition: "12", inst: "12" }
+        - { partition: "13", inst: "13" }
+        - { partition: "14", inst: "14" }
+        - { partition: "15", inst: "15" }
+        - { partition: "16", inst: "16" }
+        - { partition: "17", inst: "17" }
+        - { partition: "18", inst: "18" }
+        - { partition: "19", inst: "19" }
+        - { partition: "20", inst: "20" }
+        - { partition: "21", inst: "21" }
+        - { partition: "22", inst: "22" }
+        - { partition: "23", inst: "23" }
+        - { partition: "24", inst: "24" }
+        - { partition: "25", inst: "25" }
+        - { partition: "26", inst: "26" }
+        - { partition: "27", inst: "27" }
+        - { partition: "28", inst: "28" }
+        - { partition: "29", inst: "29" }
+        - { partition: "30", inst: "30" }
+        - { partition: "31", inst: "31" }
+        - { partition: "32", inst: "32" }
+        - { partition: "33", inst: "33" }
+
+      - name: agg-r2
+        template: agg-job
+        dependencies: [train-r2]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{tasks.agg-r1.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r1.outputs.parameters.next-round}}"
+
+      - name: eval-r2
+        template: eval-job
+        dependencies: [train-r2]
+        arguments:
+          parameters:
+          - name: inst
+            value: "{{item.inst}}"
+          - name: split-csv
+            value: "{{tasks.agg-r1.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r1.outputs.parameters.next-round}}"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r02/best.pt"
+        withItems:
+        - { inst: "01" }
+        - { inst: "02" }
+        - { inst: "03" }
+        - { inst: "04" }
+        - { inst: "05" }
+        - { inst: "06" }
+        - { inst: "07" }
+        - { inst: "08" }
+        - { inst: "09" }
+        - { inst: "10" }
+        - { inst: "11" }
+        - { inst: "12" }
+        - { inst: "13" }
+        - { inst: "14" }
+        - { inst: "15" }
+        - { inst: "16" }
+        - { inst: "17" }
+        - { inst: "18" }
+        - { inst: "19" }
+        - { inst: "20" }
+        - { inst: "21" }
+        - { inst: "22" }
+        - { inst: "23" }
+        - { inst: "24" }
+        - { inst: "25" }
+        - { inst: "26" }
+        - { inst: "27" }
+        - { inst: "28" }
+        - { inst: "29" }
+        - { inst: "30" }
+        - { inst: "31" }
+        - { inst: "32" }
+        - { inst: "33" }
+
+      # ── Round 3 ───────────────────────────────────────────────────────────
+      - name: train-r3
+        template: train-job
+        dependencies: [agg-r2]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{tasks.agg-r2.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r2.outputs.parameters.next-round}}"
+          - name: epoch
+            value: "{{tasks.agg-r2.outputs.parameters.next-epoch}}"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r02/latest.pt"
+        withItems:
+        - { partition: "1",  inst: "01" }
+        - { partition: "2",  inst: "02" }
+        - { partition: "3",  inst: "03" }
+        - { partition: "4",  inst: "04" }
+        - { partition: "5",  inst: "05" }
+        - { partition: "6",  inst: "06" }
+        - { partition: "7",  inst: "07" }
+        - { partition: "8",  inst: "08" }
+        - { partition: "9",  inst: "09" }
+        - { partition: "10", inst: "10" }
+        - { partition: "11", inst: "11" }
+        - { partition: "12", inst: "12" }
+        - { partition: "13", inst: "13" }
+        - { partition: "14", inst: "14" }
+        - { partition: "15", inst: "15" }
+        - { partition: "16", inst: "16" }
+        - { partition: "17", inst: "17" }
+        - { partition: "18", inst: "18" }
+        - { partition: "19", inst: "19" }
+        - { partition: "20", inst: "20" }
+        - { partition: "21", inst: "21" }
+        - { partition: "22", inst: "22" }
+        - { partition: "23", inst: "23" }
+        - { partition: "24", inst: "24" }
+        - { partition: "25", inst: "25" }
+        - { partition: "26", inst: "26" }
+        - { partition: "27", inst: "27" }
+        - { partition: "28", inst: "28" }
+        - { partition: "29", inst: "29" }
+        - { partition: "30", inst: "30" }
+        - { partition: "31", inst: "31" }
+        - { partition: "32", inst: "32" }
+        - { partition: "33", inst: "33" }
+
+      - name: agg-r3
+        template: agg-job
+        dependencies: [train-r3]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{tasks.agg-r2.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r2.outputs.parameters.next-round}}"
+
+      - name: eval-r3
+        template: eval-job
+        dependencies: [train-r3]
+        arguments:
+          parameters:
+          - name: inst
+            value: "{{item.inst}}"
+          - name: split-csv
+            value: "{{tasks.agg-r2.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r2.outputs.parameters.next-round}}"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r03/best.pt"
+        withItems:
+        - { inst: "01" }
+        - { inst: "02" }
+        - { inst: "03" }
+        - { inst: "04" }
+        - { inst: "05" }
+        - { inst: "06" }
+        - { inst: "07" }
+        - { inst: "08" }
+        - { inst: "09" }
+        - { inst: "10" }
+        - { inst: "11" }
+        - { inst: "12" }
+        - { inst: "13" }
+        - { inst: "14" }
+        - { inst: "15" }
+        - { inst: "16" }
+        - { inst: "17" }
+        - { inst: "18" }
+        - { inst: "19" }
+        - { inst: "20" }
+        - { inst: "21" }
+        - { inst: "22" }
+        - { inst: "23" }
+        - { inst: "24" }
+        - { inst: "25" }
+        - { inst: "26" }
+        - { inst: "27" }
+        - { inst: "28" }
+        - { inst: "29" }
+        - { inst: "30" }
+        - { inst: "31" }
+        - { inst: "32" }
+        - { inst: "33" }
+
+      # ── Round 4 ───────────────────────────────────────────────────────────
+      - name: train-r4
+        template: train-job
+        dependencies: [agg-r3]
+        arguments:
+          parameters:
+          - name: partition
+            value: "{{item.partition}}"
+          - name: split-csv
+            value: "{{tasks.agg-r3.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r3.outputs.parameters.next-round}}"
+          - name: epoch
+            value: "{{tasks.agg-r3.outputs.parameters.next-epoch}}"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r03/latest.pt"
+        withItems:
+        - { partition: "1",  inst: "01" }
+        - { partition: "2",  inst: "02" }
+        - { partition: "3",  inst: "03" }
+        - { partition: "4",  inst: "04" }
+        - { partition: "5",  inst: "05" }
+        - { partition: "6",  inst: "06" }
+        - { partition: "7",  inst: "07" }
+        - { partition: "8",  inst: "08" }
+        - { partition: "9",  inst: "09" }
+        - { partition: "10", inst: "10" }
+        - { partition: "11", inst: "11" }
+        - { partition: "12", inst: "12" }
+        - { partition: "13", inst: "13" }
+        - { partition: "14", inst: "14" }
+        - { partition: "15", inst: "15" }
+        - { partition: "16", inst: "16" }
+        - { partition: "17", inst: "17" }
+        - { partition: "18", inst: "18" }
+        - { partition: "19", inst: "19" }
+        - { partition: "20", inst: "20" }
+        - { partition: "21", inst: "21" }
+        - { partition: "22", inst: "22" }
+        - { partition: "23", inst: "23" }
+        - { partition: "24", inst: "24" }
+        - { partition: "25", inst: "25" }
+        - { partition: "26", inst: "26" }
+        - { partition: "27", inst: "27" }
+        - { partition: "28", inst: "28" }
+        - { partition: "29", inst: "29" }
+        - { partition: "30", inst: "30" }
+        - { partition: "31", inst: "31" }
+        - { partition: "32", inst: "32" }
+        - { partition: "33", inst: "33" }
+
+      - name: agg-r4
+        template: agg-job
+        dependencies: [train-r4]
+        arguments:
+          parameters:
+          - name: split-csv
+            value: "{{tasks.agg-r3.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r3.outputs.parameters.next-round}}"
+
+      - name: eval-r4
+        template: eval-job
+        dependencies: [train-r4]
+        arguments:
+          parameters:
+          - name: inst
+            value: "{{item.inst}}"
+          - name: split-csv
+            value: "{{tasks.agg-r3.outputs.parameters.next-split-csv}}"
+          - name: round
+            value: "{{tasks.agg-r3.outputs.parameters.next-round}}"
+          - name: init-ckpt
+            value: "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/inst{{item.inst}}/R05r04/best.pt"
+        withItems:
+        - { inst: "01" }
+        - { inst: "02" }
+        - { inst: "03" }
+        - { inst: "04" }
+        - { inst: "05" }
+        - { inst: "06" }
+        - { inst: "07" }
+        - { inst: "08" }
+        - { inst: "09" }
+        - { inst: "10" }
+        - { inst: "11" }
+        - { inst: "12" }
+        - { inst: "13" }
+        - { inst: "14" }
+        - { inst: "15" }
+        - { inst: "16" }
+        - { inst: "17" }
+        - { inst: "18" }
+        - { inst: "19" }
+        - { inst: "20" }
+        - { inst: "21" }
+        - { inst: "22" }
+        - { inst: "23" }
+        - { inst: "24" }
+        - { inst: "25" }
+        - { inst: "26" }
+        - { inst: "27" }
+        - { inst: "28" }
+        - { inst: "29" }
+        - { inst: "30" }
+        - { inst: "31" }
+        - { inst: "32" }
+        - { inst: "33" }
+
+  # ── Eval Job (gen_eval — 각 기관 모델을 모든 val 에 평가) ───────────────
+  - name: eval-job
+    inputs:
+      parameters:
+      - name: split-csv
+      - name: round
+      - name: init-ckpt
+      - name: inst
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "gen_eval.py"]
+      args:
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--rounds"
+      - "{{workflow.parameters.rounds}}"
+      - "--epochs"
+      - "{{workflow.parameters.epochs}}"
+      - "--init-ckpt"
+      - "{{inputs.parameters.init-ckpt}}"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
+      - "-C"
+      - "[t1,t1ce,t2,flair]"
+      - "-G"
+      - "[[1,2,4]]"
+      - "-N"
+      - "[wt]"
+      - "-I"
+      - "[1]"
+      - "--gpu"
+      - "1"
+      - "--inst"
+      - "{{inputs.parameters.inst}}"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "32Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs
+      - name: dshm
+        mountPath: /dev/shm
+
+  # ── Dry-run Job ──────────────────────────────────────────────────────────
+  - name: dry-run-job
+    outputs:
+      parameters:
+      - name: next-init-ckpt
+        valueFrom:
+          path: /tmp/outputs/next-init-ckpt
+      - name: next-split-csv
+        valueFrom:
+          path: /tmp/outputs/next-split-csv
+      - name: next-round
+        valueFrom:
+          path: /tmp/outputs/next-round
+      - name: next-epoch
+        valueFrom:
+          path: /tmp/outputs/next-epoch
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "agg.py"]
+      args:
+      - "--dry-run"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "-c"
+      - "/experiments/fets/partition2/fets_split.csv"
+      - "--sampling-rate"
+      - "1.0"
+      - "--sampling-mode"
+      - "dynamic"
+      - "--selection"
+      - "random"
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+
+  # ── Train Job — Round 0 (random init, init-ckpt 없음) ────────────────────
+  - name: train-job-r0
+    inputs:
+      parameters:
+      - name: partition
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      args:
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "-c"
+      - "{{workflow.parameters.ckpt-root}}/{{workflow.parameters.job}}/agg/init/split.csv"
+      - "-P"
+      - "{{inputs.parameters.partition}}"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "--rounds"
+      - "{{workflow.parameters.rounds}}"
+      - "--round"
+      - "0"
+      - "--epochs"
+      - "{{workflow.parameters.epochs}}"
+      - "--epoch"
+      - "0"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs
+      - name: dshm
+        mountPath: /dev/shm
+
+  # ── Train Job — Round 1+ (init-ckpt = 이전 라운드 로컬 latest.pt) ─────────
+  - name: train-job
+    inputs:
+      parameters:
+      - name: partition
+      - name: split-csv
+      - name: round
+      - name: epoch
+      - name: init-ckpt
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      args:
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "-P"
+      - "{{inputs.parameters.partition}}"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "--rounds"
+      - "{{workflow.parameters.rounds}}"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--epochs"
+      - "{{workflow.parameters.epochs}}"
+      - "--epoch"
+      - "{{inputs.parameters.epoch}}"
+      - "--init-ckpt"
+      - "{{inputs.parameters.init-ckpt}}"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs
+      - name: dshm
+        mountPath: /dev/shm
+
+  # ── Agg Job (split CSV 갱신 + inst_avg TensorBoard, agg.pt 미사용) ────────
+  - name: agg-job
+    inputs:
+      parameters:
+      - name: split-csv
+      - name: round
+    outputs:
+      parameters:
+      - name: next-init-ckpt
+        valueFrom:
+          path: /tmp/outputs/next-init-ckpt
+      - name: next-split-csv
+        valueFrom:
+          path: /tmp/outputs/next-split-csv
+      - name: next-round
+        valueFrom:
+          path: /tmp/outputs/next-round
+      - name: next-epoch
+        valueFrom:
+          path: /tmp/outputs/next-epoch
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "agg.py"]
+      args:
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "-c"
+      - "{{inputs.parameters.split-csv}}"
+      - "--sampling-rate"
+      - "1.0"
+      - "--sampling-mode"
+      - "dynamic"
+      - "--selection"
+      - "random"
+      - "--rounds"
+      - "{{workflow.parameters.rounds}}"
+      - "--round"
+      - "{{inputs.parameters.round}}"
+      - "--epochs"
+      - "{{workflow.parameters.epochs}}"
+      - "--partitions"
+      - "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33"
+      - "--runs-root"
+      - "{{workflow.parameters.runs-root}}"
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints
+      - name: runs-volume
+        mountPath: /runs

@@ -615,7 +615,19 @@ class Aggregator:
             return self._fedpod(state_dicts, metrics_list, part_ids)
         if self.args.algorithm == "fedpid":
             return self._fedpid(state_dicts, metrics_list, part_ids)
+        if self.args.algorithm == "fedbn":
+            return self._fedbn(state_dicts)
         raise ValueError(f"지원하지 않는 알고리즘: {self.args.algorithm}")
+
+    def _fedbn(self, state_dicts):
+        """FedBN — norm 레이어는 로컬 유지, 나머지는 FedAvg."""
+        avg = {}
+        for key in state_dicts[0]:
+            if any(t in key for t in (".norm.", ".bn.", ".in.")):
+                avg[key] = state_dicts[0][key].float()   # 첫 번째 partition 값 유지 (로컬)
+            else:
+                avg[key] = torch.stack([sd[key].float() for sd in state_dicts]).mean(dim=0)
+        return avg
 
     def _fedavg(self, state_dicts):
         avg = {}
@@ -813,7 +825,7 @@ def main():
     parser.add_argument("--reuse-pool",            default="",                            help="pool 재사용 — 이전 실험 split.csv 경로 (pool 컬럼 필요, entropy inference 스킵)")
     parser.add_argument("-D", "--data",     default="/data/fets128/trainval",    help="데이터 경로 (entropy 선택 시 추론에 사용)")
     parser.add_argument("--chan",           default="[t1,t1ce,t2,flair]",        help="입력 채널 (entropy 추론용)")
-    parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg / fedwavg / fedpod / fedpid)")
+    parser.add_argument("--algorithm",      default="fedavg",                   help="집계 알고리즘 (fedavg / fedwavg / fedpod / fedpid / fedbn)")
     parser.add_argument("--kp",             type=float, default=1.0,            help="FedPOD/FedPID — proportional gain")
     parser.add_argument("--ki",             type=float, default=0.1,            help="FedPOD/FedPID — integral gain")
     parser.add_argument("--kd",             type=float, default=0.0,            help="FedPOD/FedPID — derivative gain")

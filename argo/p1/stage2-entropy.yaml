@@ -21,6 +21,14 @@ spec:
       value: "3"
     - name: lr-scheduler
       value: "none"
+    - name: committee-job
+      value: "stage1"
+    - name: committee-rounds
+      value: "5"
+    - name: committee-round
+      value: "4"
+    - name: committee-partitions
+      value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
     - name: data-path
       value: "/data/fets128/trainval"
     - name: ckpt-root
@@ -28,13 +36,17 @@ spec:
     - name: runs-root
       value: "/runs"
     - name: selection
-      value: "random"
+      value: "entropy"
+    - name: scoring
+      value: "bald"
     - name: agg-sampling-mode
       value: "static"
     - name: algorithm
       value: "fedavg"
     - name: sampling-rate
       value: "1.0"
+    - name: reuse-pool
+      value: ""
     - name: kp
       value: "1.0"
     - name: ki
@@ -76,14 +88,14 @@ spec:
   templates:
 
   # ── DAG ───────────────────────────────────────────────────────────────────
-  # rounds=20, epochs={{workflow.parameters.epochs}}, partitions=1..33
+  # rounds=20, epochs={{workflow.parameters.epochs}}, partitions=1,24,25,26
   # epoch 오프셋은 agg.py 가 next-epoch 로 출력 → 다음 train/eval 로 전달.
   # 체크포인트 경로도 agg.py 가 next-init-ckpt / next-split-csv 로 출력.
   - name: stage2
     dag:
       tasks:
 
-      # dry-run: pool+random selection
+      # dry-run: pool+entropy selection
       - name: dry-run
         template: dry-run-job
 
@@ -1547,7 +1559,7 @@ spec:
           - name: round
             value: "{{tasks.agg-r18.outputs.parameters.next-round}}"
 
-  # ── Dry-run Job (pool+random selection, CPU 가능) ─────────────────────────
+  # ── Dry-run Job (pool+entropy, GPU 필요) ──────────────────────────────────
   - name: dry-run-job
     outputs:
       parameters:
@@ -1566,6 +1578,16 @@ spec:
     metadata:
       annotations:
         sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
     container:
       image: "{{workflow.parameters.image}}"
       command: ["python3", "agg.py"]
@@ -1576,27 +1598,53 @@ spec:
       - "--ckpt-root"
       - "{{workflow.parameters.ckpt-root}}"
       - "-c"
-      - "/experiments/fets/partition2/fets_split.csv"
+      - "/experiments/fets/partition1/fets_split.csv"
       - "--sampling-rate"
       - "{{workflow.parameters.sampling-rate}}"
       - "--sampling-mode"
       - "pool"
       - "--selection"
       - "{{workflow.parameters.selection}}"
+      - "--scoring"
+      - "{{workflow.parameters.scoring}}"
       - "--in-ch"
       - "5"
       - "--out-classes"
       - "3"
+      - "--reuse-pool"
+      - "{{workflow.parameters.reuse-pool}}"
+      - "--committee-job"
+      - "{{workflow.parameters.committee-job}}"
+      - "--committee-rounds"
+      - "{{workflow.parameters.committee-rounds}}"
+      - "--committee-round"
+      - "{{workflow.parameters.committee-round}}"
+      - "--committee-partitions"
+      - "{{workflow.parameters.committee-partitions}}"
+      - "--committee-in-ch"
+      - "4"
+      - "--committee-out-classes"
+      - "1"
+      - "--committee-chan"
+      - "[t1,t1ce,t2,flair]"
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "--gpu"
+      - "1"
       resources:
         requests:
-          cpu: "2"
-          memory: "4Gi"
-        limits:
           cpu: "4"
           memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
       volumeMounts:
       - name: app-volume
         mountPath: /app
+      - name: data-volume
+        mountPath: /data
       - name: experiments-volume
         mountPath: /experiments
       - name: checkpoints-volume
@@ -1811,7 +1859,7 @@ spec:
       - "--epochs"
       - "{{workflow.parameters.epochs}}"
       - "--partitions"
-      - "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33"
+      - "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
       - "--algorithm"
       - "{{workflow.parameters.algorithm}}"
       - "--kp"

@@ -75,8 +75,17 @@ class App:
 
         if self.args.init_ckpt:
             ckpt = torch.load(self.args.init_ckpt, map_location=device)
-            model.load_state_dict(ckpt["model"])
-            log.info("Loaded init model ← %s  (round=%s)", self.args.init_ckpt, ckpt.get("round"))
+            if self.args.algorithm == "fedbn":
+                # FedBN: norm 레이어는 로컬 파라미터 유지, 나머지만 덮어씀
+                local_state = model.state_dict()
+                global_state = ckpt["model"]
+                merged = {k: local_state[k] if any(t in k for t in (".norm.", ".bn.", ".in."))
+                          else global_state[k] for k in local_state}
+                model.load_state_dict(merged)
+                log.info("Loaded init model (FedBN — norm layers kept local) ← %s", self.args.init_ckpt)
+            else:
+                model.load_state_dict(ckpt["model"])
+                log.info("Loaded init model ← %s  (round=%s)", self.args.init_ckpt, ckpt.get("round"))
 
         if train_subjects:
             with torch.no_grad():
@@ -224,6 +233,7 @@ def main():
     parser.add_argument("--ckpt-root",       default="/checkpoints",                                 help="체크포인트 루트 경로")
     parser.add_argument("--runs-root",       default="/runs",                                        help="TensorBoard runs 루트 경로")
     parser.add_argument("--init-ckpt",       default="",                                             help="초기 모델 경로 (agg.pt) — 미지정 시 random init")
+    parser.add_argument("--algorithm",       default="fedavg",                                       help="집계 알고리즘 (fedavg / fedwavg / fedpod / fedpid / fedbn)")
 
     args = parser.parse_args()
 
