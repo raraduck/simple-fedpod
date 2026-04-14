@@ -14,12 +14,12 @@ run() {
 }
 
 # ── pool 재사용 실험 9개 ─────────────────────────────────────────────────────
-run "pool-anti-entropy (fedwavg, 재실행)" stage2-entropy.yaml \
-    -p job=stage2-p1-v1-pool-anti-entropy-0 -p selection=anti_entropy \
-    -p epochs=3 -p algorithm=fedwavg -p sampling-rate=0.2 \
-    -p committee-job=stage1-p1 \
-    -p lr-scheduler=linear \
-    -p reuse-pool="$REUSE_POOL"
+# run "pool-anti-entropy (fedwavg, 재실행)" stage2-entropy.yaml \
+#     -p job=stage2-p1-v1-pool-anti-entropy-0 -p selection=anti_entropy \
+#     -p epochs=3 -p algorithm=fedwavg -p sampling-rate=0.2 \
+#     -p committee-job=stage1-p1 \
+#     -p lr-scheduler=linear \
+#     -p reuse-pool="$REUSE_POOL"
 
 run "fedwavg-random" stage2-random.yaml \
     -p job=stage2-p1-v1-fedwavg-random-0 -p selection=random \

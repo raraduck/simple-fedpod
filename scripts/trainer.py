@@ -28,6 +28,10 @@ class Trainer:
 
     def _make_scheduler(self, scheduler_type, t_max, step_size, gamma, end_factor, last_epoch=0):
         le = last_epoch - 1 if last_epoch > 0 else -1
+        if le >= 0:
+            # 새 옵티마이저에는 initial_lr 이 없으므로 수동 설정
+            for group in self.optimizer.param_groups:
+                group.setdefault("initial_lr", group["lr"])
         if scheduler_type == "linear":
             return torch.optim.lr_scheduler.LinearLR(
                 self.optimizer, start_factor=1.0, end_factor=end_factor,
