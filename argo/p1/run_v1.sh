@@ -3,8 +3,7 @@ set -euo pipefail
 
 INTERVAL=$((2 * 60 * 60))  # 2시간
 
-POOL_JOB=stage2-p1-v1-pool-anti-entropy-0
-REUSE_POOL=/checkpoints/${POOL_JOB}/agg/init/split.csv
+REUSE_POOL=/checkpoints/stage2-p1-v1-pool-anti-entropy-0/agg/init/split.csv
 
 run() {
     local desc="$1"; shift
@@ -14,16 +13,14 @@ run() {
     sleep "$INTERVAL"
 }
 
-# ── Step 1: pool 생성 (entropy inference → init split.csv) ──────────────────
-# committee-job=stage1-p1 로 BALD 기반 top-k subject 선정
-# 결과: /checkpoints/stage2-p1-v1-pool-anti-entropy-0/agg/init/split.csv
-run "pool-anti-entropy (pool 생성)" stage2-entropy.yaml \
-    -p job=${POOL_JOB} -p selection=anti_entropy \
+# ── pool 재사용 실험 9개 ─────────────────────────────────────────────────────
+run "pool-anti-entropy (fedwavg, 재실행)" stage2-entropy.yaml \
+    -p job=stage2-p1-v1-pool-anti-entropy-0 -p selection=anti_entropy \
     -p epochs=3 -p algorithm=fedwavg -p sampling-rate=0.2 \
     -p committee-job=stage1-p1 \
-    -p lr-scheduler=cosine
+    -p lr-scheduler=cosine \
+    -p reuse-pool="$REUSE_POOL"
 
-# ── Step 2: pool 재사용 실험 8개 ────────────────────────────────────────────
 run "fedwavg-random" stage2-random.yaml \
     -p job=stage2-p1-v1-fedwavg-random-0 -p selection=random \
     -p epochs=3 -p algorithm=fedwavg -p sampling-rate=0.2 \
