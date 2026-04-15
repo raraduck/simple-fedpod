@@ -355,10 +355,13 @@ class Aggregator:
         self._write_output("next-split-csv", init_split)
 
     def _init_split_bi_entropy(self):
-        """bi_entropy dry-run: random pool (k/2) + anti-entropy pool (k/2) 각각 생성.
+        """bi_entropy dry-run: anti-entropy pool (k/2) + FL pool (anti-entropy k/2 + random fill → 총 k) 생성.
 
-        random pool      → {ckpt_root}/{job}/agg/init/split.csv       (next-split-csv, FL r5~)
-        anti-entropy pool → {ckpt_root}/{job}/agg/init-anti/split.csv (next-split-csv-anti, warm-up r0~r4)
+        FL pool          → {ckpt_root}/{job}/agg/init/split.csv       (next-split-csv, r5~)
+        anti-entropy pool → {ckpt_root}/{job}/agg/init-anti/split.csv (next-split-csv-anti, r0~r4)
+
+        FL pool 구성: warm-up에서 사용한 anti-entropy k/2 subjects를 모두 포함하고,
+                      나머지를 random으로 채워 총 k subjects (full sampling_rate 기준).
         """
         orig_rate = self.args.sampling_rate
         half_rate = orig_rate / 2
@@ -381,27 +384,16 @@ class Aggregator:
                      for p in partitions]
             train_idx = df[df["TrainOrVal"] == "train"].index
 
-            def _kcut_anti(rate):
-                lam = np.mean(per_n) * rate
-                k   = int(sum(int(np.clip(round(lam), 1, n)) for n in per_n))
-                pool_rows = df[df["TrainOrVal"] == "train"].sort_values("pool", ascending=False)
-                selected  = set(pool_rows.head(k)["Subject_ID"])
-                d = df.copy()
-                d.loc[train_idx, "R00"] = d.loc[train_idx, "Subject_ID"].map(
-                    lambda s: 1 if s in selected else 0)
-                d["R00"] = d["R00"].astype("Int64")
-                return d, k
-
-            # anti-entropy pool (bottom-k/2)
-            df_anti, k_a = _kcut_anti(rate=half_rate)
-
-            # random pool (k/2) — pool 내 Poisson 무작위 샘플링
-            self.args.sampling_rate = half_rate
-            df_random = df.copy()
-            df_random = self._sample_train(df_random, "R00")
-            self.args.sampling_rate = orig_rate
-            n_random = int((df_random["R00"] == 1).sum())
-            log.info("bi_entropy reuse-pool — random k=%d  anti_entropy k=%d", n_random, k_a)
+            # anti-entropy pool (bottom-k/2, pool 내 기준)
+            lam_half = np.mean(per_n) * half_rate
+            k_anti   = int(sum(int(np.clip(round(lam_half), 1, n)) for n in per_n))
+            pool_rows = df[df["TrainOrVal"] == "train"].sort_values("pool", ascending=False)
+            anti_subjects = set(pool_rows.head(k_anti)["Subject_ID"])
+            df_anti = df.copy()
+            df_anti.loc[train_idx, "R00"] = df_anti.loc[train_idx, "Subject_ID"].map(
+                lambda s: 1 if s in anti_subjects else 0)
+            df_anti["R00"] = df_anti["R00"].astype("Int64")
+            log.info("bi_entropy reuse-pool — anti_entropy k=%d", k_anti)
 
         else:
             df = pd.read_csv(self.args.split)[["Partition_ID", "Subject_ID", "TrainOrVal"]]
@@ -437,15 +429,6 @@ class Aggregator:
             df["pool"] = df["pool"].astype("Int64")
             log.info("bi_entropy pool — %d train subjects ranked (1=highest BALD)", len(train_idx))
 
-            # random pool (k/2) — 전체 train subject 대상 Poisson 무작위 샘플링
-            self.args.sampling_rate = half_rate
-            df_random = df.drop(columns=["pool"]).copy()   # pool 제한 없이 전체 대상
-            df_random = self._sample_train(df_random, "R00")
-            df_random["pool"] = df["pool"]                 # pool 컬럼 복원 (CSV 보존용)
-            self.args.sampling_rate = orig_rate
-            n_random = int((df_random["R00"] == 1).sum())
-            log.info("bi_entropy — random pool k=%d (sampling_rate=%.4f)", n_random, half_rate)
-
             # anti-entropy pool (bottom-k/2)
             self.args.sampling_rate = half_rate
             self.args.selection = "anti_entropy"
@@ -455,14 +438,61 @@ class Aggregator:
             self.args.selection = "bi_entropy"
             self.args.sampling_rate = orig_rate
 
-        # random pool → 표준 경로 (FL r5~ 사용)
+            anti_subjects = set(
+                df_anti.loc[df_anti["R00"] == 1, "Subject_ID"]
+            )
+            partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].unique())
+            per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
+                     for p in partitions]
+
+        # ── FL pool 구성: anti-entropy k/2 + random fill → 총 k ──────────────
+        # pool 있으면 pool>0 내에서, 없으면 전체 train 대상
+        has_pool = "pool" in df.columns
+        lam_full = np.mean(per_n) * orig_rate
+        df_fl = df.copy()
+        df_fl.loc[df_fl["TrainOrVal"] == "train", "R00"] = 0
+
+        total_anti = 0
+        total_random = 0
+        for p, n_total in zip(partitions, per_n):
+            if has_pool:
+                cand_idx = df_fl[(df_fl["Partition_ID"] == p) &
+                                 (df_fl["TrainOrVal"] == "train") &
+                                 (df_fl["pool"] > 0)].index
+            else:
+                cand_idx = df_fl[(df_fl["Partition_ID"] == p) &
+                                 (df_fl["TrainOrVal"] == "train")].index
+
+            part_subjects   = list(df_fl.loc[cand_idx, "Subject_ID"])
+            part_anti       = [s for s in part_subjects if s in anti_subjects]
+            part_non_anti   = [s for s in part_subjects if s not in anti_subjects]
+
+            k_p          = int(np.clip(round(lam_full), 1, len(cand_idx))) if len(cand_idx) > 0 else 0
+            n_additional = max(0, k_p - len(part_anti))
+            additional   = list(pd.Series(part_non_anti).sample(
+                n=min(n_additional, len(part_non_anti)), random_state=None))
+
+            fl_selected = set(part_anti) | set(additional)
+            df_fl.loc[cand_idx, "R00"] = df_fl.loc[cand_idx, "Subject_ID"].map(
+                lambda s: 1 if s in fl_selected else 0)
+
+            total_anti   += len(part_anti)
+            total_random += len(additional)
+            log.info("  bi_entropy FL Partition %s — anti=%d  random_add=%d  total=%d / %d",
+                     p, len(part_anti), len(additional), len(fl_selected), n_total)
+
+        df_fl["R00"] = df_fl["R00"].astype("Int64")
+        log.info("bi_entropy FL pool — anti=%d + random=%d = total=%d",
+                 total_anti, total_random, total_anti + total_random)
+
+        # FL pool → 표준 경로 (r5~ 사용)
         init_split = os.path.join(self.args.ckpt_root, self.args.job, "agg", "init", "split.csv")
         os.makedirs(os.path.dirname(init_split), exist_ok=True)
-        df_random.to_csv(init_split, index=False)
-        log.info("bi_entropy — random pool saved → %s", init_split)
+        df_fl.to_csv(init_split, index=False)
+        log.info("bi_entropy — FL pool saved → %s", init_split)
         self._write_output("next-split-csv", init_split)
 
-        # anti-entropy pool → init-anti 경로 (warm-up r0~r4 사용)
+        # anti-entropy pool → init-anti 경로 (r0~r4 사용)
         init_split_anti = os.path.join(
             self.args.ckpt_root, self.args.job, "agg", "init-anti", "split.csv")
         os.makedirs(os.path.dirname(init_split_anti), exist_ok=True)
@@ -488,7 +518,13 @@ class Aggregator:
             df = self._sample_train(df, next_col)
         else:  # static: 초기 선택 그대로 유지
             prev_col = f"R{round_idx:02d}"
-            df[next_col] = df[prev_col] if prev_col in df.columns else None
+            if prev_col not in df.columns:
+                # FL pool CSV처럼 R00만 있는 경우 — 가장 최근 R 컬럼으로 대체
+                r_cols = sorted([c for c in df.columns if c.startswith("R") and c[1:].isdigit()])
+                fallback = r_cols[-1] if r_cols else None
+                log.warning("Static mode — %s not found, falling back to %s", prev_col, fallback)
+                prev_col = fallback
+            df[next_col] = df[prev_col] if prev_col is not None else None
             df[next_col] = df[next_col].astype("Int64")
             log.info("Static mode — copied selection from %s → %s", prev_col, next_col)
         agg_dir   = os.path.dirname(self._agg_path(round_idx))

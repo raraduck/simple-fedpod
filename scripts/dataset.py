@@ -16,12 +16,19 @@ def load_split(split_csv, partition_id, round_idx=None):
 
     if round_idx is not None:
         round_col = f"R{round_idx:02d}"
-        if round_col in df.columns:
+        if round_col not in df.columns:
+            # FL pool CSV처럼 R00만 있는 경우 — 가장 최근 R 컬럼으로 대체
+            r_cols = sorted([c for c in df.columns if c.startswith("R") and c[1:].isdigit()])
+            if r_cols:
+                round_col = r_cols[-1]
+                log.warning("Round column 'R%02d' not found — falling back to %s", round_idx, round_col)
+            else:
+                round_col = None
+                log.warning("Round column 'R%02d' not found — no R columns available, using all subjects", round_idx)
+        if round_col is not None:
             # val은 항상 포함, train은 round 컬럼으로 필터링
             df = df[(df["TrainOrVal"] == "val") | (df[round_col] == 1)]
             log.info("Round column '%s' applied", round_col)
-        else:
-            log.warning("Round column '%s' not found — using all subjects", round_col)
 
     train = df[df["TrainOrVal"] == "train"]["Subject_ID"].tolist()
     val   = df[df["TrainOrVal"] == "val"]["Subject_ID"].tolist()
