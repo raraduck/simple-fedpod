@@ -89,18 +89,17 @@ spec:
 
   # ── DAG ───────────────────────────────────────────────────────────────────
   # rounds=20, epochs={{workflow.parameters.epochs}}, partitions=1~23
-  # Round 0~4: anti-entropy pool (next-split-csv-anti) — warm-up
-  # Round 5:   entropy pool (next-split-csv) — 전환점
-  # Round 6~19: 기존 agg 체인 유지
+  # bi_entropy: dry-run에서 entropy top-k/2 + anti-entropy bottom-k/2 = 단일 pool
+  # 전체 20 라운드 동일 split.csv를 static mode로 사용
   - name: stage2
     dag:
       tasks:
 
-      # dry-run: pool+bi_entropy selection
+      # dry-run: pool+bi_entropy selection (단일 split.csv 생성)
       - name: dry-run
         template: dry-run-job
 
-      # ── Round 0 (anti-entropy pool) ───────────────────────────────────────
+      # ── Round 0 ───────────────────────────────────────────────────────────
       - name: train-r0
         template: train-job
         dependencies: [dry-run]
@@ -109,7 +108,7 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "{{tasks.dry-run.outputs.parameters.next-split-csv-anti}}"
+            value: "{{tasks.dry-run.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.dry-run.outputs.parameters.next-round}}"
           - name: epoch
@@ -147,7 +146,7 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "{{tasks.dry-run.outputs.parameters.next-split-csv-anti}}"
+            value: "{{tasks.dry-run.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.dry-run.outputs.parameters.next-round}}"
           - name: init-ckpt
@@ -159,11 +158,11 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "{{tasks.dry-run.outputs.parameters.next-split-csv-anti}}"
+            value: "{{tasks.dry-run.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.dry-run.outputs.parameters.next-round}}"
 
-      # ── Round 1 (anti-entropy pool) ───────────────────────────────────────
+      # ── Round 1 ───────────────────────────────────────────────────────────
       - name: train-r1
         template: train-job
         dependencies: [agg-r0]
@@ -226,7 +225,7 @@ spec:
           - name: round
             value: "{{tasks.agg-r0.outputs.parameters.next-round}}"
 
-      # ── Round 2 (anti-entropy pool) ───────────────────────────────────────
+      # ── Round 2 ───────────────────────────────────────────────────────────
       - name: train-r2
         template: train-job
         dependencies: [agg-r1]
@@ -289,7 +288,7 @@ spec:
           - name: round
             value: "{{tasks.agg-r1.outputs.parameters.next-round}}"
 
-      # ── Round 3 (anti-entropy pool) ───────────────────────────────────────
+      # ── Round 3 ───────────────────────────────────────────────────────────
       - name: train-r3
         template: train-job
         dependencies: [agg-r2]
@@ -352,7 +351,7 @@ spec:
           - name: round
             value: "{{tasks.agg-r2.outputs.parameters.next-round}}"
 
-      # ── Round 4 (anti-entropy pool) ───────────────────────────────────────
+      # ── Round 4 ───────────────────────────────────────────────────────────
       - name: train-r4
         template: train-job
         dependencies: [agg-r3]
@@ -415,7 +414,7 @@ spec:
           - name: round
             value: "{{tasks.agg-r3.outputs.parameters.next-round}}"
 
-      # ── Round 5 (전환점: entropy pool로 전환) ─────────────────────────────
+      # ── Round 5 ───────────────────────────────────────────────────────────
       - name: train-r5
         template: train-job
         dependencies: [agg-r4]
@@ -424,7 +423,7 @@ spec:
           - name: partition
             value: "{{item.partition}}"
           - name: split-csv
-            value: "{{tasks.dry-run.outputs.parameters.next-split-csv}}"
+            value: "{{tasks.agg-r4.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r4.outputs.parameters.next-round}}"
           - name: epoch
@@ -462,7 +461,7 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "{{tasks.dry-run.outputs.parameters.next-split-csv}}"
+            value: "{{tasks.agg-r4.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r4.outputs.parameters.next-round}}"
           - name: init-ckpt
@@ -474,7 +473,7 @@ spec:
         arguments:
           parameters:
           - name: split-csv
-            value: "{{tasks.dry-run.outputs.parameters.next-split-csv}}"
+            value: "{{tasks.agg-r4.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r4.outputs.parameters.next-round}}"
 
@@ -1370,9 +1369,6 @@ spec:
       - name: next-split-csv
         valueFrom:
           path: /tmp/outputs/next-split-csv
-      - name: next-split-csv-anti
-        valueFrom:
-          path: /tmp/outputs/next-split-csv-anti
       - name: next-round
         valueFrom:
           path: /tmp/outputs/next-round
