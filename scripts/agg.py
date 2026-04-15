@@ -33,8 +33,8 @@ class Aggregator:
 
         if self.args.sampling_mode == "pool":
             raise ValueError("--sampling-mode pool은 dry-run 전용입니다. 라운드에서는 static 또는 dynamic을 사용하세요.")
-        if self.args.selection in ("entropy", "anti_entropy"):
-            raise ValueError("라운드에서 --selection entropy/anti_entropy는 지원하지 않습니다. --selection random을 사용하세요.")
+        if self.args.selection in ("entropy", "anti_entropy", "bi_entropy"):
+            raise ValueError("라운드에서 --selection entropy/anti_entropy/bi_entropy는 지원하지 않습니다. --selection random을 사용하세요.")
 
         partitions = [int(p.strip()) for p in self.args.partitions.split(",") if p.strip()]
         log.info("Round %d / %d — aggregating %d partitions %s (algorithm=%s)",
@@ -217,6 +217,11 @@ class Aggregator:
         return df
 
     def _init_split(self):
+        # ── bi_entropy: entropy pool(k/2) + anti-entropy pool(k/2) 생성 ──────
+        if self.args.selection == "bi_entropy":
+            self._init_split_bi_entropy()
+            return
+
         # ── pool 재사용: 이전 실험 split.csv 의 pool 컬럼을 그대로 사용 ──────
         if self.args.reuse_pool:
             src = pd.read_csv(self.args.reuse_pool)
@@ -348,6 +353,111 @@ class Aggregator:
         df.to_csv(init_split, index=False)
         log.info("Init split CSV saved → %s", init_split)
         self._write_output("next-split-csv", init_split)
+
+    def _init_split_bi_entropy(self):
+        """bi_entropy dry-run: entropy pool (k/2) + anti-entropy pool (k/2) 각각 생성.
+
+        entropy pool     → {ckpt_root}/{job}/agg/init/split.csv       (next-split-csv, FL r5~)
+        anti-entropy pool → {ckpt_root}/{job}/agg/init-anti/split.csv (next-split-csv-anti, warm-up r0~r4)
+        """
+        orig_rate = self.args.sampling_rate
+        half_rate = orig_rate / 2
+
+        if self.args.reuse_pool:
+            src = pd.read_csv(self.args.reuse_pool)
+            if "pool" not in src.columns:
+                raise ValueError(f"--reuse-pool CSV에 pool 컬럼이 없습니다: {self.args.reuse_pool}")
+            df = src[["Partition_ID", "Subject_ID", "TrainOrVal", "pool"]].copy()
+            df["Partition_ID"] = df["Partition_ID"].astype("Int64")
+            df["pool"] = df["pool"].astype("Int64")
+            pool_max = int(df.loc[df["TrainOrVal"] == "train", "pool"].max(skipna=True))
+            if pool_max <= 1:
+                raise ValueError(
+                    "reuse-pool CSV의 pool 컬럼에 BALD 순위가 없습니다 (max=1). "
+                    "entropy/anti_entropy selection으로 생성된 CSV를 사용하세요."
+                )
+            partitions = sorted(df[df["TrainOrVal"] == "train"]["Partition_ID"].dropna().unique())
+            per_n = [len(df[(df["Partition_ID"] == p) & (df["TrainOrVal"] == "train")])
+                     for p in partitions]
+            train_idx = df[df["TrainOrVal"] == "train"].index
+
+            def _kcut(ascending, rate):
+                lam = np.mean(per_n) * rate
+                k   = int(sum(int(np.clip(round(lam), 1, n)) for n in per_n))
+                pool_rows = df[df["TrainOrVal"] == "train"].sort_values("pool", ascending=ascending)
+                selected  = set(pool_rows.head(k)["Subject_ID"])
+                d = df.copy()
+                d.loc[train_idx, "R00"] = d.loc[train_idx, "Subject_ID"].map(
+                    lambda s: 1 if s in selected else 0)
+                d["R00"] = d["R00"].astype("Int64")
+                return d, k
+
+            df_entropy, k_e = _kcut(ascending=True,  rate=half_rate)  # entropy: top-k/2
+            df_anti,    k_a = _kcut(ascending=False, rate=half_rate)   # anti-entropy: bottom-k/2
+            log.info("bi_entropy reuse-pool — entropy k=%d  anti_entropy k=%d", k_e, k_a)
+
+        else:
+            df = pd.read_csv(self.args.split)[["Partition_ID", "Subject_ID", "TrainOrVal"]]
+            df["Partition_ID"] = df["Partition_ID"].astype("Int64")
+
+            scoring = getattr(self.args, "scoring", "bald")
+            if scoring == "bald":
+                if not (self.args.committee or self.args.committee_job):
+                    raise RuntimeError(
+                        "bi_entropy+bald 에는 --committee 또는 --committee-job 이 필요합니다.")
+                device   = torch.device("cuda" if self.args.gpu and torch.cuda.is_available() else "cpu")
+                models   = self._build_committee(device)
+                channels = self.args.committee_chan.strip("[]").split(",")
+            else:
+                device, models, channels = None, None, None
+
+            # BALD 점수 계산 (sampling_rate=1.0, 전체 train 대상)
+            self.args.sampling_rate = 1.0
+            self.args.selection = "entropy"   # 점수 계산 방향 무관, entropy로 임시 설정
+            df, pool_scores = self._sample_train_entropy(df, "_pool_tmp", models, device, channels)
+            self.args.sampling_rate = orig_rate
+            self.args.selection = "bi_entropy"
+            df = df.drop(columns=["_pool_tmp"])
+
+            # pool 순위 부여 (1=최고 BALD, N=최저 BALD)
+            df["pool"] = pd.NA
+            train_idx  = df[df["TrainOrVal"] == "train"].index
+            sorted_idx = sorted(train_idx,
+                                key=lambda i: pool_scores.get(df.loc[i, "Subject_ID"], 0),
+                                reverse=True)
+            for rank, i in enumerate(sorted_idx, start=1):
+                df.loc[i, "pool"] = rank
+            df["pool"] = df["pool"].astype("Int64")
+            log.info("bi_entropy pool — %d train subjects ranked (1=highest BALD)", len(train_idx))
+
+            # entropy pool (top-k/2)
+            self.args.sampling_rate = half_rate
+            self.args.selection = "entropy"
+            df_entropy = df.copy()
+            df_entropy, _ = self._sample_train_entropy(df_entropy, "R00", models, device, channels,
+                                                       cached_scores=pool_scores)
+            # anti-entropy pool (bottom-k/2)
+            self.args.selection = "anti_entropy"
+            df_anti = df.copy()
+            df_anti, _ = self._sample_train_entropy(df_anti, "R00", models, device, channels,
+                                                    cached_scores=pool_scores)
+            self.args.selection = "bi_entropy"
+            self.args.sampling_rate = orig_rate
+
+        # entropy pool → 표준 경로 (FL r5~ 사용)
+        init_split = os.path.join(self.args.ckpt_root, self.args.job, "agg", "init", "split.csv")
+        os.makedirs(os.path.dirname(init_split), exist_ok=True)
+        df_entropy.to_csv(init_split, index=False)
+        log.info("bi_entropy — entropy pool saved → %s", init_split)
+        self._write_output("next-split-csv", init_split)
+
+        # anti-entropy pool → init-anti 경로 (warm-up r0~r4 사용)
+        init_split_anti = os.path.join(
+            self.args.ckpt_root, self.args.job, "agg", "init-anti", "split.csv")
+        os.makedirs(os.path.dirname(init_split_anti), exist_ok=True)
+        df_anti.to_csv(init_split_anti, index=False)
+        log.info("bi_entropy — anti-entropy pool saved → %s", init_split_anti)
+        self._write_output("next-split-csv-anti", init_split_anti)
 
     # ── Split CSV 업데이트 (round 집계 후) ──────────────────────────────────
     def _update_split(self, current_split_csv, round_idx, agg_state=None):
