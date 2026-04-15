@@ -39,6 +39,8 @@ class Trainer:
         if scheduler_type == "step":
             return torch.optim.lr_scheduler.StepLR(
                 self.optimizer, step_size=step_size, gamma=gamma, last_epoch=le)
+        if scheduler_type != "none":
+            log.warning("알 수 없는 lr-scheduler 값: '%s' — 스케줄러 미적용", scheduler_type)
         return None
 
     def _auto_resume(self):
