@@ -16,7 +16,7 @@ spec:
     - name: image
       value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.3"
     - name: job
-      value: "stage2"
+      value: "stage2-2"
     - name: epochs
       value: "3"
     - name: lr-scheduler
@@ -99,7 +99,7 @@ spec:
       - name: dry-run
         template: dry-run-job
 
-      # ── Round 0 ───────────────────────────────────────────────────────────
+      # ── Round 0 (단일 기관: 1) ────────────────────────────────────────────
       - name: train-r0
         template: train-job
         dependencies: [dry-run]
@@ -116,29 +116,7 @@ spec:
           - name: init-ckpt
             value: "{{tasks.dry-run.outputs.parameters.next-init-ckpt}}"
         withItems:
-        - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "4"  }
-        - { partition: "5"  }
-        - { partition: "6"  }
-        - { partition: "7"  }
-        - { partition: "8"  }
-        - { partition: "9"  }
-        - { partition: "10" }
-        - { partition: "11" }
-        - { partition: "12" }
-        - { partition: "13" }
-        - { partition: "14" }
-        - { partition: "15" }
-        - { partition: "16" }
-        - { partition: "17" }
-        - { partition: "18" }
-        - { partition: "19" }
-        - { partition: "20" }
-        - { partition: "21" }
-        - { partition: "22" }
-        - { partition: "23" }
+        - { partition: "1" }
 
       - name: eval-r0
         template: eval-job
@@ -161,8 +139,10 @@ spec:
             value: "{{tasks.dry-run.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.dry-run.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1"
 
-      # ── Round 1 ───────────────────────────────────────────────────────────
+      # ── Round 1 (단일 기관: 1) ────────────────────────────────────────────
       - name: train-r1
         template: train-job
         dependencies: [agg-r0]
@@ -179,29 +159,7 @@ spec:
           - name: init-ckpt
             value: "{{tasks.agg-r0.outputs.parameters.next-init-ckpt}}"
         withItems:
-        - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "4"  }
-        - { partition: "5"  }
-        - { partition: "6"  }
-        - { partition: "7"  }
-        - { partition: "8"  }
-        - { partition: "9"  }
-        - { partition: "10" }
-        - { partition: "11" }
-        - { partition: "12" }
-        - { partition: "13" }
-        - { partition: "14" }
-        - { partition: "15" }
-        - { partition: "16" }
-        - { partition: "17" }
-        - { partition: "18" }
-        - { partition: "19" }
-        - { partition: "20" }
-        - { partition: "21" }
-        - { partition: "22" }
-        - { partition: "23" }
+        - { partition: "1" }
 
       - name: eval-r1
         template: eval-job
@@ -224,8 +182,10 @@ spec:
             value: "{{tasks.agg-r0.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r0.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1"
 
-      # ── Round 2 ───────────────────────────────────────────────────────────
+      # ── Round 2 (단일 기관: 1) ────────────────────────────────────────────
       - name: train-r2
         template: train-job
         dependencies: [agg-r1]
@@ -242,29 +202,7 @@ spec:
           - name: init-ckpt
             value: "{{tasks.agg-r1.outputs.parameters.next-init-ckpt}}"
         withItems:
-        - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "4"  }
-        - { partition: "5"  }
-        - { partition: "6"  }
-        - { partition: "7"  }
-        - { partition: "8"  }
-        - { partition: "9"  }
-        - { partition: "10" }
-        - { partition: "11" }
-        - { partition: "12" }
-        - { partition: "13" }
-        - { partition: "14" }
-        - { partition: "15" }
-        - { partition: "16" }
-        - { partition: "17" }
-        - { partition: "18" }
-        - { partition: "19" }
-        - { partition: "20" }
-        - { partition: "21" }
-        - { partition: "22" }
-        - { partition: "23" }
+        - { partition: "1" }
 
       - name: eval-r2
         template: eval-job
@@ -287,8 +225,10 @@ spec:
             value: "{{tasks.agg-r1.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r1.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1"
 
-      # ── Round 3 ───────────────────────────────────────────────────────────
+      # ── Round 3 (단일 기관: 1) ────────────────────────────────────────────
       - name: train-r3
         template: train-job
         dependencies: [agg-r2]
@@ -305,29 +245,7 @@ spec:
           - name: init-ckpt
             value: "{{tasks.agg-r2.outputs.parameters.next-init-ckpt}}"
         withItems:
-        - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "4"  }
-        - { partition: "5"  }
-        - { partition: "6"  }
-        - { partition: "7"  }
-        - { partition: "8"  }
-        - { partition: "9"  }
-        - { partition: "10" }
-        - { partition: "11" }
-        - { partition: "12" }
-        - { partition: "13" }
-        - { partition: "14" }
-        - { partition: "15" }
-        - { partition: "16" }
-        - { partition: "17" }
-        - { partition: "18" }
-        - { partition: "19" }
-        - { partition: "20" }
-        - { partition: "21" }
-        - { partition: "22" }
-        - { partition: "23" }
+        - { partition: "1" }
 
       - name: eval-r3
         template: eval-job
@@ -350,8 +268,10 @@ spec:
             value: "{{tasks.agg-r2.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r2.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1"
 
-      # ── Round 4 ───────────────────────────────────────────────────────────
+      # ── Round 4 (단일 기관: 1) ────────────────────────────────────────────
       - name: train-r4
         template: train-job
         dependencies: [agg-r3]
@@ -368,29 +288,7 @@ spec:
           - name: init-ckpt
             value: "{{tasks.agg-r3.outputs.parameters.next-init-ckpt}}"
         withItems:
-        - { partition: "1"  }
-        - { partition: "2"  }
-        - { partition: "3"  }
-        - { partition: "4"  }
-        - { partition: "5"  }
-        - { partition: "6"  }
-        - { partition: "7"  }
-        - { partition: "8"  }
-        - { partition: "9"  }
-        - { partition: "10" }
-        - { partition: "11" }
-        - { partition: "12" }
-        - { partition: "13" }
-        - { partition: "14" }
-        - { partition: "15" }
-        - { partition: "16" }
-        - { partition: "17" }
-        - { partition: "18" }
-        - { partition: "19" }
-        - { partition: "20" }
-        - { partition: "21" }
-        - { partition: "22" }
-        - { partition: "23" }
+        - { partition: "1" }
 
       - name: eval-r4
         template: eval-job
@@ -413,6 +311,8 @@ spec:
             value: "{{tasks.agg-r3.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r3.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1"
 
       # ── Round 5 ───────────────────────────────────────────────────────────
       - name: train-r5
@@ -476,6 +376,8 @@ spec:
             value: "{{tasks.agg-r4.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r4.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 6 ───────────────────────────────────────────────────────────
       - name: train-r6
@@ -539,6 +441,8 @@ spec:
             value: "{{tasks.agg-r5.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r5.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 7 ───────────────────────────────────────────────────────────
       - name: train-r7
@@ -602,6 +506,8 @@ spec:
             value: "{{tasks.agg-r6.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r6.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 8 ───────────────────────────────────────────────────────────
       - name: train-r8
@@ -665,6 +571,8 @@ spec:
             value: "{{tasks.agg-r7.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r7.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 9 ───────────────────────────────────────────────────────────
       - name: train-r9
@@ -728,6 +636,8 @@ spec:
             value: "{{tasks.agg-r8.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r8.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 10 ──────────────────────────────────────────────────────────
       - name: train-r10
@@ -791,6 +701,8 @@ spec:
             value: "{{tasks.agg-r9.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r9.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 11 ──────────────────────────────────────────────────────────
       - name: train-r11
@@ -854,6 +766,8 @@ spec:
             value: "{{tasks.agg-r10.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r10.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 12 ──────────────────────────────────────────────────────────
       - name: train-r12
@@ -917,6 +831,8 @@ spec:
             value: "{{tasks.agg-r11.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r11.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 13 ──────────────────────────────────────────────────────────
       - name: train-r13
@@ -980,6 +896,8 @@ spec:
             value: "{{tasks.agg-r12.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r12.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 14 ──────────────────────────────────────────────────────────
       - name: train-r14
@@ -1043,6 +961,8 @@ spec:
             value: "{{tasks.agg-r13.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r13.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 15 ──────────────────────────────────────────────────────────
       - name: train-r15
@@ -1106,6 +1026,8 @@ spec:
             value: "{{tasks.agg-r14.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r14.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 16 ──────────────────────────────────────────────────────────
       - name: train-r16
@@ -1169,6 +1091,8 @@ spec:
             value: "{{tasks.agg-r15.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r15.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 17 ──────────────────────────────────────────────────────────
       - name: train-r17
@@ -1232,6 +1156,8 @@ spec:
             value: "{{tasks.agg-r16.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r16.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 18 ──────────────────────────────────────────────────────────
       - name: train-r18
@@ -1295,6 +1221,8 @@ spec:
             value: "{{tasks.agg-r17.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r17.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
       # ── Round 19 ──────────────────────────────────────────────────────────
       - name: train-r19
@@ -1358,6 +1286,8 @@ spec:
             value: "{{tasks.agg-r18.outputs.parameters.next-split-csv}}"
           - name: round
             value: "{{tasks.agg-r18.outputs.parameters.next-round}}"
+          - name: partitions
+            value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
 
   # ── Dry-run Job (pool+bi_entropy selection, GPU 필요) ─────────────────────
   - name: dry-run-job
@@ -1607,6 +1537,7 @@ spec:
       parameters:
       - name: split-csv
       - name: round
+      - name: partitions
     outputs:
       parameters:
       - name: next-init-ckpt
@@ -1655,7 +1586,7 @@ spec:
       - "--epochs"
       - "{{workflow.parameters.epochs}}"
       - "--partitions"
-      - "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
+      - "{{inputs.parameters.partitions}}"
       - "--algorithm"
       - "{{workflow.parameters.algorithm}}"
       - "--kp"
