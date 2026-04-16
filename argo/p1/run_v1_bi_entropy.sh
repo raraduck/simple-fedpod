@@ -14,7 +14,7 @@ run() {
 
 # r0~r4: anti-entropy pool(k/2), r5~r19: entropy pool(k/2)
 run "fedpod-bi-entropy" stage2-bi-entropy.yaml \
-    -p job=stage2-p1-v1-fedpod-bi-entropy-1 -p selection=bi_entropy \
+    -p job=stage2-p1-v1-fedpod-bi-entropy-0 -p selection=bi_entropy \
     -p epochs=3 -p algorithm=fedpod -p sampling-rate=0.2 \
     -p kp=0.45 -p ki=0.1 -p kd=0.45 \
     -p committee-job=stage1-p1 \
