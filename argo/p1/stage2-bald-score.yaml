@@ -1,0 +1,154 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: fedpod-stage2-bald-score-
+  namespace: dwnkim
+spec:
+  entrypoint: stage2-bald-score
+  serviceAccountName: default
+  podGC:
+    strategy: OnPodCompletion
+
+  # ── 공통 파라미터 ──────────────────────────────────────────────────────────
+  # dry-run 만 수행하여 bald_scores.csv 를 {ckpt-root}/{job}/agg/init/ 에 저장.
+  arguments:
+    parameters:
+    - name: image
+      value: "192.168.0.80:30002/dwnkim/argo-fedpod:v0.3"
+    - name: job
+      value: "stage2-p1-bald-score"
+    - name: committee-job
+      value: "stage1-p1"
+    - name: committee-rounds
+      value: "5"
+    - name: committee-round
+      value: "4"
+    - name: committee-partitions
+      value: "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23"
+    - name: data-path
+      value: "/data/fets128/trainval"
+    - name: ckpt-root
+      value: "/checkpoints"
+    - name: sampling-rate
+      value: "1.0"
+
+  volumes:
+  - name: app-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/scripts
+      readOnly: true
+  - name: data-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/data
+      readOnly: true
+  - name: experiments-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/experiments
+      readOnly: true
+  - name: checkpoints-volume
+    nfs:
+      server: 192.168.0.200
+      path: /volume1/testfield/GPU_storage/Private_storage/dwnkim/simple-fedpod/checkpoints
+      readOnly: false
+
+  templates:
+
+  # ── DAG ───────────────────────────────────────────────────────────────────
+  # dry-run 만 실행 — bald_scores.csv 저장 후 종료.
+  - name: stage2-bald-score
+    dag:
+      tasks:
+      - name: dry-run
+        template: dry-run-job
+
+  # ── Dry-run Job (pool+entropy BALD scoring, GPU 필요) ─────────────────────
+  - name: dry-run-job
+    outputs:
+      parameters:
+      - name: next-init-ckpt
+        valueFrom:
+          path: /tmp/outputs/next-init-ckpt
+      - name: next-split-csv
+        valueFrom:
+          path: /tmp/outputs/next-split-csv
+      - name: next-round
+        valueFrom:
+          path: /tmp/outputs/next-round
+      - name: next-epoch
+        valueFrom:
+          path: /tmp/outputs/next-epoch
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu.model
+              operator: In
+              values:
+              - rtx3090
+              - rtx4090
+    container:
+      image: "{{workflow.parameters.image}}"
+      command: ["python3", "agg.py"]
+      args:
+      - "--dry-run"
+      - "-J"
+      - "{{workflow.parameters.job}}"
+      - "--ckpt-root"
+      - "{{workflow.parameters.ckpt-root}}"
+      - "-c"
+      - "/experiments/fets/partition1/fets_split.csv"
+      - "--sampling-rate"
+      - "{{workflow.parameters.sampling-rate}}"
+      - "--sampling-mode"
+      - "pool"
+      - "--selection"
+      - "entropy"
+      - "--scoring"
+      - "bald"
+      - "--in-ch"
+      - "5"
+      - "--out-classes"
+      - "3"
+      - "--committee-job"
+      - "{{workflow.parameters.committee-job}}"
+      - "--committee-rounds"
+      - "{{workflow.parameters.committee-rounds}}"
+      - "--committee-round"
+      - "{{workflow.parameters.committee-round}}"
+      - "--committee-partitions"
+      - "{{workflow.parameters.committee-partitions}}"
+      - "--committee-in-ch"
+      - "4"
+      - "--committee-out-classes"
+      - "1"
+      - "--committee-chan"
+      - "[t1,t1ce,t2,flair]"
+      - "-D"
+      - "{{workflow.parameters.data-path}}"
+      - "--gpu"
+      - "1"
+      resources:
+        requests:
+          cpu: "4"
+          memory: "8Gi"
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: "16Gi"
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: app-volume
+        mountPath: /app
+      - name: data-volume
+        mountPath: /data
+      - name: experiments-volume
+        mountPath: /experiments
+      - name: checkpoints-volume
+        mountPath: /checkpoints

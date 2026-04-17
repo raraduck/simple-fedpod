@@ -297,6 +297,8 @@ class Aggregator:
                 df, pool_scores = self._sample_train_entropy(df, "_pool_tmp", models, device, channels)
                 self.args.sampling_rate = orig_rate
                 df = df.drop(columns=["_pool_tmp"])
+                init_dir = os.path.join(self.args.ckpt_root, self.args.job, "agg", "init")
+                self._save_bald_scores(df, pool_scores, init_dir)
                 # 전체 train subject에 BALD 순위 부여 (1=최고 BALD, N=최저 BALD)
                 df["pool"] = pd.NA
                 train_idx = df[df["TrainOrVal"] == "train"].index
@@ -422,6 +424,8 @@ class Aggregator:
             self.args.sampling_rate = orig_rate
             self.args.selection = "bi_entropy"
             df = df.drop(columns=["_pool_tmp"])
+            init_dir = os.path.join(self.args.ckpt_root, self.args.job, "agg", "init")
+            self._save_bald_scores(df, pool_scores, init_dir)
 
             # pool 순위 부여 (1=최고 BALD, N=최저 BALD)
             df["pool"] = pd.NA
@@ -699,6 +703,16 @@ class Aggregator:
 
         df[col] = df[col].astype("Int64")
         return df, scores
+
+    def _save_bald_scores(self, df, scores, out_dir):
+        """BALD 점수를 별도 CSV로 저장 (Subject_ID, Partition_ID, bald_score)."""
+        train_df = df[df["TrainOrVal"] == "train"][["Subject_ID", "Partition_ID"]].copy()
+        train_df["bald_score"] = train_df["Subject_ID"].map(scores)
+        train_df = train_df.sort_values("bald_score", ascending=False).reset_index(drop=True)
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "bald_scores.csv")
+        train_df.to_csv(path, index=False)
+        log.info("BALD scores saved → %s  (%d subjects)", path, len(train_df))
 
     # ── 초기 모델 생성 (dry-run) ────────────────────────────────────────────
     def _init_model(self):

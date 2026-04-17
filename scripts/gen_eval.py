@@ -22,13 +22,15 @@ log = logging.getLogger(__name__)
 
 @torch.no_grad()
 def _eval_partition(model, val_loader, lnam, criterion, device):
-    """단일 partition val 평가 — (val_loss, dice_dict, dice_avg) 반환."""
+    """단일 partition val 평가 — (val_loss, dice_dict, dice_avg) 반환.
+
+    dice는 subject별로 계산한 뒤 subject 평균을 취한다 (macro-subject).
+    이렇게 해야 기관 내 subject 수가 달라도 각 subject가 동등하게 기여하고,
+    이후 기관 간 균등 평균(÷n_institutions)과 결합해 완전한 균등 가중치가 유지된다.
+    """
     model.eval()
-    n = len(lnam)
-    total_loss = 0.0
-    tp = torch.zeros(n)
-    fp = torch.zeros(n)
-    fn = torch.zeros(n)
+    total_loss   = 0.0
+    dice_per_subj = []  # list of (C,) tensors
 
     for images, labels in val_loader:
         images = images.to(device)
@@ -38,14 +40,17 @@ def _eval_partition(model, val_loader, lnam, criterion, device):
         total_loss += (bce + dsc.mean()).item()
         preds   = (torch.sigmoid(logits) > 0.5).float()
         spatial = list(range(2, preds.dim()))
-        tp += (preds * labels).sum(dim=[0] + spatial).cpu()
-        fp += (preds * (1 - labels)).sum(dim=[0] + spatial).cpu()
-        fn += ((1 - preds) * labels).sum(dim=[0] + spatial).cpu()
+        # subject(배치) 단위 dice: (B, C)
+        tp = (preds * labels).sum(dim=spatial)
+        fp = (preds * (1 - labels)).sum(dim=spatial)
+        fn = ((1 - preds) * labels).sum(dim=spatial)
+        dice_per_subj.append(((2 * tp) / (2 * tp + fp + fn + 1e-8)).cpu())
 
-    val_loss = total_loss / len(val_loader)
-    dice     = (2 * tp) / (2 * tp + fp + fn + 1e-8)
-    dice_d   = {name: dice[i].item() for i, name in enumerate(lnam)}
-    dice_avg = dice.mean().item()
+    val_loss  = total_loss / len(val_loader)
+    dice_all  = torch.cat(dice_per_subj, dim=0)   # (N_subj, C)
+    dice_mean = dice_all.mean(dim=0)               # (C,) — subject 균등 평균
+    dice_d    = {name: dice_mean[i].item() for i, name in enumerate(lnam)}
+    dice_avg  = dice_mean.mean().item()
     return val_loss, dice_d, dice_avg
 
 
